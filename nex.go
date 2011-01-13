@@ -2,11 +2,10 @@ package main
 import ("bufio";"bytes";"os";"strings")
 type rule struct {
   regex []byte
-  code []byte
+  code string
 }
 func main() {
   in := bufio.NewReader(os.Stdin)
-  //out := bufio.NewWriter(os.Stdout)
   var r int
   done := false
   buf := bytes.NewBufferString("")
@@ -48,11 +47,10 @@ func main() {
     }
     if done { panic("expected }") }
     buf.WriteRune(r)
-    x.code = make([]byte, len(buf.Bytes()))
-    copy(x.code, buf.Bytes())
+    x.code = buf.String()
     rules = append(rules, x)
   }
   for i, x := range rules {
-    println(i, string(x.regex), string(x.code))
+    println(i, string(x.regex), x.code)
   }
 }
