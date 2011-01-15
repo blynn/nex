@@ -90,7 +90,7 @@ func gen(out io.Writer, rulei int, s []int) {
       return
     }
     switch s[pos] {
-    case '*','+': panic(ErrBareClosure)
+    case '*','+','?': panic(ErrBareClosure)
     case ')':
       if 0 == nlpar { panic(ErrUnmatchedRpar) }
       end = newNode()
@@ -135,6 +135,13 @@ func gen(out io.Writer, rulei int, s []int) {
       newNilEdge(end, nend)
       start = end
       end = nend
+    case '+':
+      newNilEdge(end, start)
+      nend := newNode()
+      newNilEdge(end, nend)
+      end = nend
+    case '?':
+      newNilEdge(start, end)
     default:
       return
     }
@@ -407,15 +414,15 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
     rules = append(rules, x)
   }
   fmt.Fprintf(out, "package %s\n", name)
-  out.WriteString(`import ("bufio";"os")
+  fmt.Fprintf(out, `import ("bufio";"os")
 type dfa struct {
   acc []bool
   f []func(int) int
 }
-const count = 2
+const count = %d
 var a [count]dfa
 func init() {
-`)
+`, len(rules))
 
   for i, x := range rules { gen(out, i, x.regex) }
 

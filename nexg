@@ -1,0 +1,18 @@
+#!/bin/bash
+if [ -z $1 ]; then
+  echo Usage: $0 NEXFILE
+  echo Compiles and runs a Go program described by a .nex file.
+  exit 0
+fi
+dir=$(mktemp -d)
+here=$(pwd)
+cp -l $1 $dir/nex.nex
+cd $dir
+nex < nex.nex > go.go
+6g _nn_.go
+6g go.go
+6l go.6
+cd $here
+shift
+$dir/6.out $*
+rm -rf $dir
