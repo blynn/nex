@@ -1,7 +1,7 @@
 // Some copy-and-paste from src/pkg/regexp; hopefully this means our regexes
 // will be largely compatible.
 package main
-import ("bufio";"bytes";"fmt";"os";"strings")
+import ("bufio";"bytes";"flag";"fmt";"io";"os";"strings")
 type rule struct {
   regex []int
   code string
@@ -46,7 +46,7 @@ type node struct {
   accept bool
   set []int  // For the NFA -> DFA conversion.
 }
-func gen(rulei int, s []int) {
+func gen(out io.Writer, rulei int, s []int) {
   // Regex -> NFA
   alph := make(map[int]bool)
   pos := 0
@@ -198,6 +198,7 @@ func gen(rulei int, s []int) {
   }
   n = len(short)
 
+/*
   {
   var show func(*node)
   mark := make([]bool, n)
@@ -217,6 +218,7 @@ func gen(rulei int, s []int) {
   }
   show(start)
   }
+  */
 
   // NFA -> DFA
   nilClose := func(st []bool) {
@@ -317,54 +319,30 @@ func gen(rulei int, s []int) {
   }
   n = dfacount
 
-/*
-  var show func(*node)
-  mark := make([]bool, dfacount)
-  show = func(u *node) {
-    mark[u.n] = true
-    print(u.n)
-    if u.accept { print("*") }
-    print(": ")
-    for _,e := range u.e {
-      print("(", e.kind, " ", e.r, ")")
-      print(e.dst.n)
-    }
-    println()
-    for _,e := range u.e {
-      if !mark[e.dst.n] {
-	show(e.dst)
-      }
-    }
-  }
-  show(dfastart)
-  */
   // TODO: Literal arrays instead of a series of assignments.
-  fmt.Printf("{\n");
-  fmt.Printf("var acc [%d]bool\n", n)
-  fmt.Printf("var fun [%d]func(int) int\n", n)
+  fmt.Fprintf(out, "{\nvar acc [%d]bool\nvar fun [%d]func(int) int\n", n, n)
   for _,v := range tab {
     if -1 == v.n { continue }
     if v.accept {
-      fmt.Printf("acc[%d] = true\n", v.n)
+      fmt.Fprintf(out, "acc[%d] = true\n", v.n)
     }
-    fmt.Printf("fun[%d] = func(r int) int {\n", v.n)
-    fmt.Printf("  switch(r) {\n")
+    fmt.Fprintf(out, "fun[%d] = func(r int) int {\n", v.n)
+    fmt.Fprintf(out, "  switch(r) {\n")
     for _,e := range v.e {
       m := e.dst.n
       if e.kind == 0 {
-	fmt.Printf("  case %d: return %d\n", e.r, m)
+	fmt.Fprintf(out, "  case %d: return %d\n", e.r, m)
       } else {
-	fmt.Printf("  default: return %d\n", m)
+	fmt.Fprintf(out, "  default: return %d\n", m)
       }
     }
-    fmt.Printf("  }\n  panic(\"unreachable\")\n}\n")
+    fmt.Fprintf(out, "  }\n  panic(\"unreachable\")\n}\n")
   }
-  fmt.Printf("a[%d].acc = acc[:]\n", rulei);
-  fmt.Printf("a[%d].f = fun[:]\n", rulei);
-  fmt.Printf("}\n");
+  fmt.Fprintf(out, "a[%d].acc = acc[:]\n", rulei);
+  fmt.Fprintf(out, "a[%d].f = fun[:]\n}\n", rulei);
 }
-func main() {
-  in := bufio.NewReader(os.Stdin)
+  //out := bufio.NewWriter(os.Stdout)
+func process(in *bufio.Reader, out *bufio.Writer, pkgname string) {
   var r int
   done := false
   regex := make([]int, 0, 8)
@@ -410,12 +388,107 @@ func main() {
     x.code = buf.String()
     rules = append(rules, x)
   }
-  out := bufio.NewWriter(os.Stdout)
-  for i, x := range rules {
-    for _,v := range x.regex {
-      out.WriteRune(v)
-      out.Flush()
+  fmt.Fprintf(out, "package %s\n", pkgname)
+  out.WriteString(`import ("bufio";"os")
+type dfa struct {
+  acc []bool
+  f []func(int) int
+}
+const count = 2
+var a [count]dfa
+func init() {
+`)
+
+  for i, x := range rules { gen(out, i, x.regex) }
+
+  out.WriteString(`}
+func getAction(c *ctx) int {
+  if -1 == c.match { panic("No match") }
+  action := c.match
+  c.match = -1
+  return action
+}
+type ctx struct {
+  done bool
+  match, matchn, n int
+  buf []int
+  in *bufio.Reader
+  state [count]int
+}
+func NewContext(in *bufio.Reader) interface{} {
+  c := new(ctx)
+  c.buf = make([]int, 0, 128)
+  c.in = in
+  c.match = -1
+  return c
+}
+func Next(p interface {}) (bool, int) {
+  c := p.(*ctx)
+  if c.done { return true, -1 }
+  if c.n == len(c.buf) {
+    r,_,er := c.in.ReadRune()
+    switch er {
+    case nil: c.buf = append(c.buf, r)
+    case os.EOF:
+      c.done = true
+      return false, getAction(c)
+    default: panic(er.String())
     }
-    gen(i, x.regex)
+  }
+  jammed := true
+  r := c.buf[c.n]
+  for i, x := range a {
+    if -1 == c.state[i] { continue }
+    c.state[i] = x.f[c.state[i]](r)
+    if -1 == c.state[i] { continue }
+    jammed = false
+    if x.acc[c.state[i]] {
+      if -1 == c.match || c.matchn < len(c.buf) || c.match > i {
+	c.match = i
+	c.matchn = len(c.buf)
+      }
+    }
+  }
+  if jammed {
+    c.n = 0
+    for i, _ := range c.state { c.state[i] = 0 }
+    copy(c.buf, c.buf[c.matchn:])
+    c.buf = c.buf[:len(c.buf) - c.matchn]
+    return false, getAction(c)
+  }
+  c.n++
+  return false, -1
+}
+`)
+  out.Flush()
+
+  outmain := bufio.NewWriter(os.Stdout)
+  outmain.WriteString(`func(in *bufio.Reader) {
+  nn_ctx := nn.NewContext(in)
+  for {
+    nn_done, nn_action := nn.Next(nn_ctx)
+    if nn_done { break }
+    switch nn_action {`)
+  for i, x := range rules {
+    fmt.Fprintf(outmain, "\n    case %d:\n", i)
+    outmain.WriteString(x.code)
+  }
+
+  outmain.WriteString("    }\n  }\n}\n")
+  outmain.Flush()
+}
+
+func main() {
+  flag.Parse()
+  if 0 == flag.NArg() {
+    name := "_nn_"
+    f,er := os.Open(name + ".go", os.O_WRONLY|os.O_CREATE, 0644)
+    if f == nil {
+      println("nex:", er.String())
+      os.Exit(1)
+    }
+    process(bufio.NewReader(os.Stdin), bufio.NewWriter(f), name)
+    f.Close()
+    return
   }
 }
