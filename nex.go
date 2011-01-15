@@ -1,7 +1,7 @@
 // Some copy-and-paste from src/pkg/regexp; hopefully this means our regexes
 // will be largely compatible.
 package main
-import ("bufio";"bytes";"flag";"fmt";"io";"os";"strings")
+import ("bufio";"flag";"fmt";"io";"os";"strings")
 type rule struct {
   regex []int
   code string
@@ -257,7 +257,7 @@ func gen(out io.Writer, rulei int, s []int) {
     tab[string(buf)] = tmp
   }
   newDFANode := func(st []bool) (res *node, found bool) {
-    buf = buf[0:0]
+    buf = buf[:0]
     accept := false
     for i,v := range st {
       if v {
@@ -341,12 +341,25 @@ func gen(out io.Writer, rulei int, s []int) {
   fmt.Fprintf(out, "a[%d].acc = acc[:]\n", rulei);
   fmt.Fprintf(out, "a[%d].f = fun[:]\n}\n", rulei);
 }
-  //out := bufio.NewWriter(os.Stdout)
-func process(in *bufio.Reader, out *bufio.Writer, pkgname string) {
+func writeActions(out *bufio.Writer, rules []*rule, prefix string) {
+  fmt.Fprintf(out, `func(in *bufio.Reader) {
+  nnCtx := %s.NewContext(in)
+  for {
+    nnDone, nnAction := %s.Next(nnCtx)
+    if nnDone { break }
+    switch nnAction {`, prefix, prefix)
+  for i, x := range rules {
+    fmt.Fprintf(out, "\n    case %d:  // %s\n", i, string(x.regex))
+    out.WriteString(x.code)
+  }
+
+  out.WriteString("    }\n  }\n}\n")
+}
+func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
   var r int
   done := false
   regex := make([]int, 0, 8)
-  buf := bytes.NewBufferString("")
+  buf := make([]int, 0, 8)
   read := func() {
     var er os.Error
     r,_,er = in.ReadRune()
@@ -360,15 +373,20 @@ func process(in *bufio.Reader, out *bufio.Writer, pkgname string) {
     }
   }
   var rules []*rule
+  usercode := false
   for !done {
     skipws()
     if done { break }
-    regex = regex[0:0]
+    regex = regex[:0]
     for {
       regex = append(regex, r)
       read()
       if done { break }
       if strings.IndexRune(" \n\t\r", r) != -1 { break }
+    }
+    if "%%" == string(regex) {
+      usercode = true
+      break
     }
     skipws()
     if done { panic("last pattern lacks action") }
@@ -376,19 +394,19 @@ func process(in *bufio.Reader, out *bufio.Writer, pkgname string) {
     x.regex = make([]int, len(regex))
     copy(x.regex, regex)
     if '{' != r { panic("expected {") }
-    buf.Truncate(0)
+    buf = buf[:0]
     for {
-      buf.WriteRune(r)
+      buf = append(buf, r)
       read()
       if done { break }
       if '}' == r { break }
     }
     if done { panic("expected }") }
-    buf.WriteRune(r)
-    x.code = buf.String()
+    buf = append(buf, r)
+    x.code = string(buf)
     rules = append(rules, x)
   }
-  fmt.Fprintf(out, "package %s\n", pkgname)
+  fmt.Fprintf(out, "package %s\n", name)
   out.WriteString(`import ("bufio";"os")
 type dfa struct {
   acc []bool
@@ -462,19 +480,22 @@ func Next(p interface {}) (bool, int) {
 `)
   out.Flush()
 
-  outmain := bufio.NewWriter(os.Stdout)
-  outmain.WriteString(`func(in *bufio.Reader) {
-  nn_ctx := nn.NewContext(in)
-  for {
-    nn_done, nn_action := nn.Next(nn_ctx)
-    if nn_done { break }
-    switch nn_action {`)
-  for i, x := range rules {
-    fmt.Fprintf(outmain, "\n    case %d:\n", i)
-    outmain.WriteString(x.code)
+  if !usercode { return }
+  skipws()
+  buf = buf[:0]
+  const macro = "NN_FUN"
+  for !done {
+    buf = append(buf, r)
+    if macro[0:len(buf)] != string(buf) {
+      outmain.WriteString(string(buf))
+      buf = buf[:0]
+    } else if len(macro) == len(buf) {
+      writeActions(outmain, rules, name)
+      buf = buf[:0]
+    }
+    read()
   }
-
-  outmain.WriteString("    }\n  }\n}\n")
+  outmain.WriteString(string(buf))
   outmain.Flush()
 }
 
@@ -487,7 +508,9 @@ func main() {
       println("nex:", er.String())
       os.Exit(1)
     }
-    process(bufio.NewReader(os.Stdin), bufio.NewWriter(f), name)
+    outmain := bufio.NewWriter(os.Stdout)
+    out := bufio.NewWriter(f)
+    process(bufio.NewReader(os.Stdin), out, outmain, name)
     f.Close()
     return
   }
