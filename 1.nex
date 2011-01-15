@@ -7,7 +7,6 @@ import "./_nn_"
 func main() {
   nLines := 0
   nChars := 0
-  nn_go := NN_FUN
-  nn_go(bufio.NewReader(os.Stdin))
+  NN_FUN(bufio.NewReader(os.Stdin))
   fmt.Printf("%d %d\n", nLines, nChars)
 }

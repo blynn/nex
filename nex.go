@@ -343,17 +343,17 @@ func gen(out io.Writer, rulei int, s []int) {
 }
 func writeActions(out *bufio.Writer, rules []*rule, prefix string) {
   fmt.Fprintf(out, `func(in *bufio.Reader) {
-  nnCtx := %s.NewContext(in)
+  nnCtx := %s.NewContext(bufio.NewReader(os.Stdin))
   for {
-    nnDone, nnAction := %s.Next(nnCtx)
-    if nnDone { break }
-    switch nnAction {`, prefix, prefix)
+    %s.Next(nnCtx)
+    if %s.IsDone(nnCtx) { break }
+    switch %s.Action(nnCtx) {`, prefix, prefix, prefix, prefix)
   for i, x := range rules {
     fmt.Fprintf(out, "\n    case %d:  // %s\n", i, string(x.regex))
     out.WriteString(x.code)
   }
 
-  out.WriteString("    }\n  }\n}\n")
+  out.WriteString("    }\n  }\n}")
 }
 func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
   var r int
@@ -420,15 +420,13 @@ func init() {
   for i, x := range rules { gen(out, i, x.regex) }
 
   out.WriteString(`}
-func getAction(c *ctx) int {
+func getAction(c *ctx) {
   if -1 == c.match { panic("No match") }
-  action := c.match
-  c.match = -1
-  return action
+  c.action, c.match = c.match, -1
 }
 type ctx struct {
-  done bool
-  match, matchn, n int
+  atEOF bool
+  action, match, matchn, n int
   buf []int
   in *bufio.Reader
   state [count]int
@@ -440,42 +438,48 @@ func NewContext(in *bufio.Reader) interface{} {
   c.match = -1
   return c
 }
-func Next(p interface {}) (bool, int) {
+func IsDone(p interface {}) bool { return -1 == p.(*ctx).action }
+func Action(p interface {}) int { return p.(*ctx).action }
+func Next(p interface {}) {
   c := p.(*ctx)
-  if c.done { return true, -1 }
-  if c.n == len(c.buf) {
-    r,_,er := c.in.ReadRune()
-    switch er {
-    case nil: c.buf = append(c.buf, r)
-    case os.EOF:
-      c.done = true
-      return false, getAction(c)
-    default: panic(er.String())
-    }
-  }
-  jammed := true
-  r := c.buf[c.n]
-  for i, x := range a {
-    if -1 == c.state[i] { continue }
-    c.state[i] = x.f[c.state[i]](r)
-    if -1 == c.state[i] { continue }
-    jammed = false
-    if x.acc[c.state[i]] {
-      if -1 == c.match || c.matchn < len(c.buf) || c.match > i {
-	c.match = i
-	c.matchn = len(c.buf)
+  c.action = -1
+  for {
+    if c.atEOF { return }
+    if c.n == len(c.buf) {
+      r,_,er := c.in.ReadRune()
+      switch er {
+      case nil: c.buf = append(c.buf, r)
+      case os.EOF:
+	c.atEOF = true
+	if c.n > 0 { getAction(c) }
+	return
+      default: panic(er.String())
       }
     }
+    jammed := true
+    r := c.buf[c.n]
+    for i, x := range a {
+      if -1 == c.state[i] { continue }
+      c.state[i] = x.f[c.state[i]](r)
+      if -1 == c.state[i] { continue }
+      jammed = false
+      if x.acc[c.state[i]] {
+	if -1 == c.match || c.matchn < len(c.buf) || c.match > i {
+	  c.match = i
+	  c.matchn = len(c.buf)
+	}
+      }
+    }
+    if jammed {
+      c.n = 0
+      for i, _ := range c.state { c.state[i] = 0 }
+      copy(c.buf, c.buf[c.matchn:])
+      c.buf = c.buf[:len(c.buf) - c.matchn]
+      getAction(c)
+      return
+    }
+    c.n++
   }
-  if jammed {
-    c.n = 0
-    for i, _ := range c.state { c.state[i] = 0 }
-    copy(c.buf, c.buf[c.matchn:])
-    c.buf = c.buf[:len(c.buf) - c.matchn]
-    return false, getAction(c)
-  }
-  c.n++
-  return false, -1
 }
 `)
   out.Flush()
