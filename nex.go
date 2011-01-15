@@ -1,7 +1,6 @@
 // Some copy-and-paste from src/pkg/regexp; hopefully this means our regexes
 // will be largely compatible.
 package main
-//import ("encoding/binary";"bufio";"bytes";"os";"strings")
 import ("bufio";"bytes";"fmt";"os";"strings")
 type rule struct {
   regex []int
@@ -47,7 +46,7 @@ type node struct {
   accept bool
   set []int  // For the NFA -> DFA conversion.
 }
-func f(s []int) {
+func gen(rulei int, s []int) {
   // Regex -> NFA
   alph := make(map[int]bool)
   pos := 0
@@ -264,7 +263,6 @@ func f(s []int) {
 	accept = accept || short[i].accept
       } else { buf = append(buf, '0') }
     }
-println("buf", string(buf))
     res, found = tab[string(buf)]
     if !found {
       res = new(node)
@@ -341,14 +339,15 @@ println("buf", string(buf))
   show(dfastart)
   */
   // TODO: Literal arrays instead of a series of assignments.
-  fmt.Printf("var accept [%d]bool\n", n)
+  fmt.Printf("{\n");
+  fmt.Printf("var acc [%d]bool\n", n)
   fmt.Printf("var fun [%d]func(int) int\n", n)
   for _,v := range tab {
     if -1 == v.n { continue }
     if v.accept {
-      fmt.Printf("accept[%d] = true\n", v.n)
+      fmt.Printf("acc[%d] = true\n", v.n)
     }
-    fmt.Printf("fun[%d] = func(int r) int {\n", v.n)
+    fmt.Printf("fun[%d] = func(r int) int {\n", v.n)
     fmt.Printf("  switch(r) {\n")
     for _,e := range v.e {
       m := e.dst.n
@@ -358,8 +357,11 @@ println("buf", string(buf))
 	fmt.Printf("  default: return %d\n", m)
       }
     }
-    fmt.Printf("  }\n}\n")
+    fmt.Printf("  }\n  panic(\"unreachable\")\n}\n")
   }
+  fmt.Printf("a[%d].acc = acc[:]\n", rulei);
+  fmt.Printf("a[%d].f = fun[:]\n", rulei);
+  fmt.Printf("}\n");
 }
 func main() {
   in := bufio.NewReader(os.Stdin)
@@ -414,7 +416,6 @@ func main() {
       out.WriteRune(v)
       out.Flush()
     }
-    println(i, x.regex, x.code)
-    f(x.regex)
+    gen(i, x.regex)
   }
 }

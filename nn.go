@@ -1,24 +1,48 @@
 package nn
 import ("bufio";"os")
 
-type rule struct {
-  b []byte
+type dfa struct {
+  acc []bool
+  f []func(int) int
 }
-
-const count = 5
-var a [count]*rule
+const count = 2
+var a [count]dfa
 func init() {
-  newRule := func(s string) *rule {
-    r := new(rule)
-    r.b = make([]byte, len(s))
-    copy(r.b, s)
-    return r
+{
+var acc [2]bool
+var fun [2]func(int) int
+acc[1] = true
+fun[1] = func(r int) int {
+  switch(r) {
+  case 97: return -1
+  default: return -1
   }
-  a[0] = newRule("foo")
-  a[1] = newRule("bar")
-  a[2] = newRule("barr")
-  a[3] = newRule(" ")
-  a[4] = newRule("\n")
+  panic("unreachable")
+}
+fun[0] = func(r int) int {
+  switch(r) {
+  case 97: return 1
+  default: return -1
+  }
+  panic("unreachable")
+}
+a[0].acc = acc[:]
+a[0].f = fun[:]
+}
+{
+var acc [1]bool
+var fun [1]func(int) int
+acc[0] = true
+fun[0] = func(r int) int {
+  switch(r) {
+  case 98: return 0
+  default: return -1
+  }
+  panic("unreachable")
+}
+a[1].acc = acc[:]
+a[1].f = fun[:]
+}
 }
 
 type ctx struct {
@@ -37,20 +61,16 @@ func NewContext(in *bufio.Reader) interface{} {
   return c
 }
 
-func IsDone(p interface{}) bool {
+func Next(p interface {}) (bool, int) {
   c := p.(*ctx)
-  return c.done
-}
-
-func Iterate(p interface {}) int {
-  c := p.(*ctx)
+  if c.done { return true, -1 }
   if c.n == len(c.buf) {
     r,_,er := c.in.ReadRune()
     switch er {
     case nil: c.buf = append(c.buf, r)
     case os.EOF:
       c.done = true
-      return getAction(c)
+      return false, getAction(c)
     default: panic(er.String())
     }
   }
@@ -58,18 +78,14 @@ func Iterate(p interface {}) int {
   r := c.buf[c.n]
   for i, x := range a {
     if -1 == c.state[i] { continue }
-    if len(x.b) == c.state[i] { c.state[i] = -1; continue }
-    if r == int(x.b[c.state[i]]) {
-      jammed = false
-      c.state[i]++
-      if len(c.buf) == len(x.b) {
-	if -1 == c.match || c.matchn < len(c.buf) || c.match > i {
-	  c.match = i
-	  c.matchn = len(c.buf)
-	}
+    c.state[i] = x.f[c.state[i]](r)
+    if -1 == c.state[i] { continue }
+    jammed = false
+    if x.acc[c.state[i]] {
+      if -1 == c.match || c.matchn < len(c.buf) || c.match > i {
+	c.match = i
+	c.matchn = len(c.buf)
       }
-    } else {
-      c.state[i] = - 1
     }
   }
   if jammed {
@@ -77,10 +93,10 @@ func Iterate(p interface {}) int {
     for i, _ := range c.state { c.state[i] = 0 }
     copy(c.buf, c.buf[c.matchn:])
     c.buf = c.buf[:len(c.buf) - c.matchn]
-    return getAction(c)
+    return false, getAction(c)
   }
   c.n++
-  return -1
+  return false, -1
 }
 
 func getAction(c *ctx) int {
