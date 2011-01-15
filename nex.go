@@ -471,9 +471,9 @@ func Next(p interface {}) {
       if -1 == c.state[i] { continue }
       jammed = false
       if x.acc[c.state[i]] {
-	if -1 == c.match || c.matchn < len(c.buf) || c.match > i {
+	if -1 == c.match || c.matchn < c.n+1 || c.match > i {
 	  c.match = i
-	  c.matchn = len(c.buf)
+	  c.matchn = c.n+1
 	}
       }
     }
