@@ -1,6 +1,7 @@
 // Some copy-and-paste from src/pkg/regexp; hopefully this means our regexes
 // will be largely compatible.
 package main
+//import ("encoding/binary";"bufio";"bytes";"os";"strings")
 import ("bufio";"bytes";"os";"strings")
 type rule struct {
   regex []int
@@ -44,8 +45,11 @@ type node struct {
   e []*edge
   n int
   accept bool
+  set []int  // For the NFA -> DFA conversion.
 }
 func f(s []int) {
+  // Regex -> NFA
+  alph := make(map[int]bool)
   pos := 0
   n := 0
   newNode := func() *node {
@@ -70,6 +74,7 @@ func f(s []int) {
     res := newEdge(u, v)
     res.kind = 0
     res.r = r
+    alph[r] = true
     return res
   }
   newNilEdge := func(u, v *node) *edge {
@@ -170,6 +175,31 @@ func f(s []int) {
   start, end := pre()
   end.accept = true
 
+  // Compute shortlist of nodes, as we may have discarded nodes left over
+  // from parsing. Also, make short[0] the start node.
+  short := make([]*node, 0, n)
+  {
+    var visit func(*node)
+    mark := make([]bool, n)
+    newn := make([]int, n)
+    visit = func(u *node) {
+      mark[u.n] = true
+      newn[u.n] = len(short)
+      short = append(short, u)
+      for _,e := range u.e {
+	if !mark[e.dst.n] {
+	  visit(e.dst)
+	}
+      }
+    }
+    visit(start)
+    for _,v := range short {
+      v.n = newn[v.n]
+    }
+  }
+  n = len(short)
+
+  {
   var show func(*node)
   mark := make([]bool, n)
   show = func(u *node) {
@@ -187,6 +217,119 @@ func f(s []int) {
     }
   }
   show(start)
+  }
+
+  // NFA -> DFA
+  nilClose := func(st []bool) {
+    mark := make([]bool, n)
+    var do func(int)
+    do = func(i int) {
+      v := short[i]
+      for _,e := range v.e {
+	if -1 == e.kind && !mark[e.dst.n] {
+	  st[e.dst.n] = true
+	  do(e.dst.n)
+	}
+      }
+    }
+    for i := 0; i < n; i++ {
+      if st[i] && !mark[i] {
+	mark[i] = true
+	do(i)
+      }
+    }
+  }
+  states := make([]bool, n)
+  states[0] = true
+  nilClose(states)
+
+  todo := make([]*node, 0, n)
+  tab := make(map[string]*node)
+  buf := make([]byte, 0, 8)
+  dfacount := 0
+  newDFANode := func(st []bool) (res *node, found bool) {
+    buf = buf[0:0]
+    accept := false
+    for i,v := range st {
+      if v {
+	buf = append(buf, '1')
+	accept = accept || short[i].accept
+      } else { buf = append(buf, '0') }
+    }
+println("buf", string(buf))
+    res, found = tab[string(buf)]
+    if !found {
+      res = new(node)
+      res.set = make([]int, 0, 8)
+      res.n = dfacount
+      res.accept = accept
+      dfacount++
+      for i,v := range st {
+	if v { res.set = append(res.set, i) }
+      }
+      tab[string(buf)] = res
+    }
+    return res, found
+  }
+  dfastart, _ := newDFANode(states)
+  todo = append(todo, dfastart)
+  for len(todo) > 0 {
+    v := todo[len(todo)-1]
+    todo = todo[0:len(todo)-1]
+    for r,_ := range alph {
+      states := make([]bool, n)
+      for _,i := range v.set {
+	for _,e := range short[i].e {
+	  if e.kind == 0 && e.r == r {
+	    states[e.dst.n] = true
+	  } else if e.kind == 1 {
+	    states[e.dst.n] = true
+	  }
+	}
+      }
+      nilClose(states)
+      node, old := newDFANode(states)
+      if !old {
+	todo = append(todo, node)
+      }
+      newRuneEdge(v, node, r)
+    }
+    states := make([]bool, n)
+    for _,i := range v.set {
+      for _,e := range short[i].e {
+	if e.kind == 1 {
+	  states[e.dst.n] = true
+	}
+      }
+    }
+    nilClose(states)
+    node, old := newDFANode(states)
+    if !old {
+      todo = append(todo, node)
+    }
+    newWildEdge(v, node)
+  }
+
+  var show func(*node)
+  mark := make([]bool, dfacount)
+  show = func(u *node) {
+    mark[u.n] = true
+    print(u.n)
+    if u.accept { print("*") }
+    print(": ")
+    for _,e := range u.e {
+      print("(", e.kind, " ", e.r, ")")
+      print(e.dst.n)
+    }
+    println()
+    for _,e := range u.e {
+      if !mark[e.dst.n] {
+	show(e.dst)
+      }
+    }
+  }
+  show(dfastart)
+
 }
 func main() {
   in := bufio.NewReader(os.Stdin)
