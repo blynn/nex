@@ -2,7 +2,7 @@
 // will be largely compatible.
 package main
 //import ("encoding/binary";"bufio";"bytes";"os";"strings")
-import ("bufio";"bytes";"os";"strings")
+import ("bufio";"bytes";"fmt";"os";"strings")
 type rule struct {
   regex []int
   code string
@@ -247,6 +247,14 @@ func f(s []int) {
   tab := make(map[string]*node)
   buf := make([]byte, 0, 8)
   dfacount := 0
+  {
+    for i := 0; i < n; i++ {
+      buf = append(buf, '0')
+    }
+    tmp := new(node)
+    tmp.n = -1
+    tab[string(buf)] = tmp
+  }
   newDFANode := func(st []bool) (res *node, found bool) {
     buf = buf[0:0]
     accept := false
@@ -309,7 +317,9 @@ println("buf", string(buf))
     }
     newWildEdge(v, node)
   }
+  n = dfacount
 
+/*
   var show func(*node)
   mark := make([]bool, dfacount)
   show = func(u *node) {
@@ -329,7 +339,27 @@ println("buf", string(buf))
     }
   }
   show(dfastart)
-
+  */
+  // TODO: Literal arrays instead of a series of assignments.
+  fmt.Printf("var accept [%d]bool\n", n)
+  fmt.Printf("var fun [%d]func(int) int\n", n)
+  for _,v := range tab {
+    if -1 == v.n { continue }
+    if v.accept {
+      fmt.Printf("accept[%d] = true\n", v.n)
+    }
+    fmt.Printf("fun[%d] = func(int r) int {\n", v.n)
+    fmt.Printf("  switch(r) {\n")
+    for _,e := range v.e {
+      m := e.dst.n
+      if e.kind == 0 {
+	fmt.Printf("  case %d: return %d\n", e.r, m)
+      } else {
+	fmt.Printf("  default: return %d\n", m)
+      }
+    }
+    fmt.Printf("  }\n}\n")
+  }
 }
 func main() {
   in := bufio.NewReader(os.Stdin)
