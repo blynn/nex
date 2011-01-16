@@ -46,7 +46,7 @@ type node struct {
   e []*edge
   n int
   accept bool
-  set []int  // For the NFA -> DFA conversion.
+  set []int  // The NFA nodes represented by a DFA node.
 }
 func inClass(r int, lim []int) bool {
   for i := 0; i < len(lim); i+=2 {
@@ -57,6 +57,7 @@ func inClass(r int, lim []int) bool {
 func gen(out io.Writer, rulei int, s []int) {
   // Regex -> NFA
   alph := make(map[int]bool)
+  lim := make([]int, 0, 8)
   pos := 0
   n := 0
   newNode := func() *node {
@@ -142,6 +143,11 @@ func gen(out io.Writer, rulei int, s []int) {
 	  }
 	case left <= c: // Upper limit.
 	  e.lim = append(e.lim, left, c)
+	  if left == c {
+	    alph[c] = true
+	  } else {
+	    lim = append(lim, left, c)
+	  }
 	  left = -1
 	default:
 	  panic(ErrBadRange)
@@ -310,10 +316,6 @@ func gen(out io.Writer, rulei int, s []int) {
       }
     }
   }
-  states := make([]bool, n)
-  states[0] = true
-  nilClose(states)
-
   todo := make([]*node, 0, n)
   tab := make(map[string]*node)
   buf := make([]byte, 0, 8)
@@ -349,11 +351,22 @@ func gen(out io.Writer, rulei int, s []int) {
     }
     return res, found
   }
-  dfastart, _ := newDFANode(states)
-  todo = append(todo, dfastart)
+
+  get := func(states []bool) *node {
+    nilClose(states)
+    node, old := newDFANode(states)
+    if !old {
+      todo = append(todo, node)
+    }
+    return node
+  }
+  states := make([]bool, n)
+  states[0] = true
+  get(states)
   for len(todo) > 0 {
     v := todo[len(todo)-1]
     todo = todo[0:len(todo)-1]
+    // Singles.
     for r,_ := range alph {
       states := make([]bool, n)
       for _,i := range v.set {
@@ -367,13 +380,24 @@ func gen(out io.Writer, rulei int, s []int) {
 	  }
 	}
       }
-      nilClose(states)
-      node, old := newDFANode(states)
-      if !old {
-	todo = append(todo, node)
-      }
-      newRuneEdge(v, node, r)
+      newRuneEdge(v, get(states), r)
     }
+    // Character ranges.
+    for j := 0; j < len(lim); j+=2 {
+      states := make([]bool, n)
+      for _,i := range v.set {
+	for _,e := range short[i].e {
+	  if e.kind == 1 {
+	    states[e.dst.n] = true
+	  } else if e.kind == 2 && e.negate != inClass(lim[j], e.lim) {
+	    states[e.dst.n] = true
+	  }
+	}
+      }
+      e := newClassEdge(v, get(states))
+      e.lim = append(e.lim, lim[j], lim[j+1])
+    }
+    // Other.
     states := make([]bool, n)
     for _,i := range v.set {
       for _,e := range short[i].e {
@@ -382,15 +406,11 @@ func gen(out io.Writer, rulei int, s []int) {
 	}
       }
     }
-    nilClose(states)
-    node, old := newDFANode(states)
-    if !old {
-      todo = append(todo, node)
-    }
-    newWildEdge(v, node)
+    newWildEdge(v, get(states))
   }
   n = dfacount
 
+  // DFA -> Go
   // TODO: Literal arrays instead of a series of assignments.
   fmt.Fprintf(out, "{\nvar acc [%d]bool\nvar fun [%d]func(int) int\n", n, n)
   for _,v := range tab {
@@ -404,11 +424,19 @@ func gen(out io.Writer, rulei int, s []int) {
       m := e.dst.n
       if e.kind == 0 {
 	fmt.Fprintf(out, "  case %d: return %d\n", e.r, m)
-      } else {
-	fmt.Fprintf(out, "  default: return %d\n", m)
       }
     }
-    fmt.Fprintf(out, "  }\n  panic(\"unreachable\")\n}\n")
+    fmt.Fprintf(out, "  default:\n    switch {\n")
+    for _,e := range v.e {
+      m := e.dst.n
+      if e.kind == 2 {
+	fmt.Fprintf(out, "    %d <= r && r <= %d: return %d\n",
+	    e.lim[0], e.lim[1], m)
+      } else if e.kind == 1 {
+	fmt.Fprintf(out, "    default: return %d\n", m)
+      }
+    }
+    fmt.Fprintf(out, "    }\n  }\n  panic(\"unreachable\")\n}\n")
   }
   fmt.Fprintf(out, "a[%d].acc = acc[:]\n", rulei);
   fmt.Fprintf(out, "a[%d].f = fun[:]\n}\n", rulei);
