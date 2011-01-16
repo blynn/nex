@@ -5,6 +5,8 @@ import ("bufio";"flag";"fmt";"io";"os";"strings")
 type rule struct {
   regex []int
   code string
+  family int
+  index int
 }
 type Error string
 
@@ -54,7 +56,8 @@ func inClass(r int, lim []int) bool {
   }
   return false
 }
-func gen(out io.Writer, rulei int, s []int) {
+func gen(out io.Writer, x *rule) {
+  s := x.regex
   // Regex -> NFA
   alph := make(map[int]bool)
   lim := make([]int, 0, 8)
@@ -438,12 +441,12 @@ func gen(out io.Writer, rulei int, s []int) {
     }
     fmt.Fprintf(out, "    }\n  }\n  panic(\"unreachable\")\n}\n")
   }
-  fmt.Fprintf(out, "a[%d].acc = acc[:]\n", rulei);
-  fmt.Fprintf(out, "a[%d].f = fun[:]\n}\n", rulei);
+  fmt.Fprintf(out, "a%d[%d].acc = acc[:]\n", x.family, x.index);
+  fmt.Fprintf(out, "a%d[%d].f = fun[:]\n}\n", x.family, x.index);
 }
 func writeActions(out *bufio.Writer, rules []*rule, prefix string) {
   fmt.Fprintf(out, `func(in *bufio.Reader) {
-  nnCtx := %s.NewContext(bufio.NewReader(os.Stdin))
+  nnCtx := %s.NewContext(bufio.NewReader(os.Stdin), 0)
   for {
     %s.Next(nnCtx)
     if %s.IsDone(nnCtx) { break }
@@ -452,7 +455,6 @@ func writeActions(out *bufio.Writer, rules []*rule, prefix string) {
     fmt.Fprintf(out, "\n    case %d:  // %s\n", i, string(x.regex))
     out.WriteString(x.code)
   }
-
   out.WriteString("    }\n  }\n}")
 }
 func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
@@ -474,37 +476,62 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
   }
   var rules []*rule
   usercode := false
-  for !done {
-    skipws()
-    if done { break }
-    regex = regex[:0]
-    for {
-      regex = append(regex, r)
-      read()
+  familyn := 1
+  var parse func(int)
+  parse = func(family int) {
+    rulen := 0
+    for !done {
+      skipws()
       if done { break }
-      if strings.IndexRune(" \n\t\r", r) != -1 { break }
+      regex = regex[:0]
+      for {
+	regex = append(regex, r)
+	read()
+	if done { break }
+	if strings.IndexRune(" \n\t\r", r) != -1 { break }
+      }
+      if "%%" == string(regex) {
+	if 0 != family { panic("nested '%%'") }
+	usercode = true
+	break
+      }
+      if ">" == string(regex) {
+	if 0 == family { panic("unmatched >") }
+	fmt.Fprintf(out, "var a%d [%d]dfa\n", family, len(rules))
+	return
+      }
+      skipws()
+      if done { panic("last pattern lacks action") }
+      x := new(rule)
+      x.index = rulen
+      rulen++
+      x.family = family
+      x.regex = make([]int, len(regex))
+      copy(x.regex, regex)
+      switch r {
+      case '<':
+	read()
+	parse(familyn)
+	x.code = fmt.Sprintf("{ _nn_.Nest(nnCtx, %d) }\n", familyn)
+	familyn++
+      case '{':
+	buf = buf[:0]
+	for {
+	  buf = append(buf, r)
+	  read()
+	  if done { break }
+	  if '}' == r { break }
+	}
+	if done { panic("unmatched {") }
+	buf = append(buf, r)
+	x.code = string(buf)
+      default:
+        panic("expected { or <")
+      }
+      rules = append(rules, x)
     }
-    if "%%" == string(regex) {
-      usercode = true
-      break
-    }
-    skipws()
-    if done { panic("last pattern lacks action") }
-    x := new(rule)
-    x.regex = make([]int, len(regex))
-    copy(x.regex, regex)
-    if '{' != r { panic("expected {") }
-    buf = buf[:0]
-    for {
-      buf = append(buf, r)
-      read()
-      if done { break }
-      if '}' == r { break }
-    }
-    if done { panic("expected }") }
-    buf = append(buf, r)
-    x.code = string(buf)
-    rules = append(rules, x)
+    if 0 != family { panic("unmatched <") }
+    fmt.Fprintf(out, "var a%d [%d]dfa\n", family, len(rules))
   }
   fmt.Fprintf(out, "package %s\n", name)
   fmt.Fprintf(out, `import ("bufio";"os")
@@ -512,36 +539,59 @@ type dfa struct {
   acc []bool
   f []func(int) int
 }
-const count = %d
-var a [count]dfa
-func init() {
-`, len(rules))
+`)
 
-  for i, x := range rules { gen(out, i, x.regex) }
+  parse(0)
+
+  out.WriteString("var a [][]dfa\n")
+
+  out.WriteString("func init() {\n")
+
+  for _, x := range rules { gen(out, x) }
+
+  fmt.Fprintf(out, "a = make([][]dfa, %d)\n", familyn)
+  for i := 0; i < familyn; i++ {
+    fmt.Fprintf(out, "a[%d] = a%d[:]\n", i, i)
+  }
 
   out.WriteString(`}
-func getAction(c *ctx) {
+func getAction(c *frame) {
   if -1 == c.match { panic("No match") }
   c.action, c.match = c.match, -1
 }
-type ctx struct {
+type frame struct {
   atEOF bool
   action, match, matchn, n int
   buf []int
   in *bufio.Reader
-  state [count]int
+  state []int
+  a []dfa
 }
-func NewContext(in *bufio.Reader) interface{} {
-  c := new(ctx)
-  c.buf = make([]int, 0, 128)
-  c.in = in
-  c.match = -1
-  return c
+func newFrame(in *bufio.Reader, index int) *frame {
+  f := new(frame)
+  f.buf = make([]int, 0, 128)
+  f.in = in
+  f.match = -1
+  f.a = a[index]
+  f.state = make([]int, len(f.a))
+  return f
 }
-func IsDone(p interface {}) bool { return -1 == p.(*ctx).action }
-func Action(p interface {}) int { return p.(*ctx).action }
+func NewContext(in *bufio.Reader, index int) interface{} {
+  stack := make([]*frame, 0, 4)
+  stack = append(stack, newFrame(in, index))
+  return stack
+}
+func IsDone(p interface {}) bool {
+  stack := p.([]*frame)
+  return -1 == stack[len(stack)-1].action
+}
+func Action(p interface {}) int {
+  stack := p.([]*frame)
+  return stack[len(stack)-1].action
+}
 func Next(p interface {}) {
-  c := p.(*ctx)
+  stack := p.([]*frame)
+  c := stack[len(stack) - 1]
   c.action = -1
   for {
     if c.atEOF { return }
@@ -558,7 +608,7 @@ func Next(p interface {}) {
     }
     jammed := true
     r := c.buf[c.n]
-    for i, x := range a {
+    for i, x := range c.a {
       if -1 == c.state[i] { continue }
       c.state[i] = x.f[c.state[i]](r)
       if -1 == c.state[i] { continue }
@@ -580,6 +630,8 @@ func Next(p interface {}) {
     }
     c.n++
   }
+}
+func Nest(p interface {}, index int) {
 }
 `)
   out.Flush()
@@ -605,7 +657,7 @@ func Next(p interface {}) {
 
 func main() {
   run := func(name string, file *os.File) {
-    f,er := os.Open(name + ".go", os.O_WRONLY|os.O_CREATE, 0644)
+    f,er := os.Open(name + ".go", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
     if f == nil {
       println("nex:", er.String())
       os.Exit(1)
