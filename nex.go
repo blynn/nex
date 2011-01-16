@@ -39,12 +39,20 @@ type edge struct {
   kind int
   r int
   dst *node
+  negate bool
+  lim []int
 }
 type node struct {
   e []*edge
   n int
   accept bool
   set []int  // For the NFA -> DFA conversion.
+}
+func inClass(r int, lim []int) bool {
+  for i := 0; i < len(lim); i+=2 {
+    if lim[i] <= r && r <= lim[i+1] { return true }
+  }
+  return false
 }
 func gen(out io.Writer, rulei int, s []int) {
   // Regex -> NFA
@@ -81,7 +89,67 @@ func gen(out io.Writer, rulei int, s []int) {
     res.kind = -1
     return res
   }
+  newClassEdge := func(u, v *node) *edge {
+    res := newEdge(u, v)
+    res.kind = 2
+    res.lim = make([]int, 0, 2)
+    return res
+  }
   nlpar := 0
+  maybeEscape := func() int {
+    c := s[pos]
+    if '\\' == c {
+      pos++
+      if len(s) == pos { panic(ErrExtraneousBackslash) }
+      c = s[pos]
+      switch {
+      case ispunct(c):
+      case escape(c) >= 0: c = escaped[escape(s[pos])]
+      default: panic(ErrBadBackslash)
+      }
+    }
+    return c
+  }
+  pcharclass := func() (start, end *node) {
+    start = newNode()
+    end = newNode()
+    e := newClassEdge(start, end)
+    if len(s) > pos && '^' == s[pos] {
+      e.negate = true
+      pos++
+    }
+    left := -1
+    for {
+      if len(s) == pos || s[pos] == ']' {
+	if left >= 0 { panic(ErrBadRange) }
+	return
+      }
+      switch(s[pos]) {
+      case '-':
+        panic(ErrBadRange)
+      default:
+        c := maybeEscape()
+	pos++
+	if len(s) == pos { panic(ErrBadRange) }
+	switch {
+	case left < 0:  // Lower limit.
+	  if '-' == s[pos] {
+	    pos++
+	    left = c
+	  } else {
+	    e.lim = append(e.lim, c, c)
+	    alph[c] = true
+	  }
+	case left <= c: // Upper limit.
+	  e.lim = append(e.lim, left, c)
+	  left = -1
+	default:
+	  panic(ErrBadRange)
+	}
+      }
+    }
+    panic("unreachable")
+  }
   var pre func() (start, end *node)
   pterm := func() (start, end *node) {
     if len(s) == pos || s[pos] == '|' {
@@ -105,21 +173,16 @@ func gen(out io.Writer, rulei int, s []int) {
       start = newNode()
       end = newNode()
       newWildEdge(start, end)
+    case ']':
+      panic(ErrUnmatchedRbkt)
+    case '[':
+      pos++
+      start, end = pcharclass()
+      if len(s) == pos || ']' != s[pos] { panic(ErrUnmatchedLbkt) }
     default:
-      c  := s[pos]
-      if '\\' == c {
-	pos++
-	if len(s) == pos { panic(ErrExtraneousBackslash) }
-	c = s[pos]
-	switch {
-	case ispunct(c):
-	case escape(c) >= 0: c = escaped[escape(s[pos])]
-	default: panic(ErrBadBackslash)
-	}
-      }
       start = newNode()
       end = newNode()
-      newRuneEdge(start, end, c)
+      newRuneEdge(start, end, maybeEscape())
     }
     pos++
     return
@@ -299,6 +362,8 @@ func gen(out io.Writer, rulei int, s []int) {
 	    states[e.dst.n] = true
 	  } else if e.kind == 1 {
 	    states[e.dst.n] = true
+	  } else if e.kind == 2 && e.negate != inClass(r, e.lim) {
+	    states[e.dst.n] = true
 	  }
 	}
       }
@@ -312,7 +377,7 @@ func gen(out io.Writer, rulei int, s []int) {
     states := make([]bool, n)
     for _,i := range v.set {
       for _,e := range short[i].e {
-	if e.kind == 1 {
+	if e.kind == 1 || (e.kind == 2 && e.negate) {
 	  states[e.dst.n] = true
 	}
       }

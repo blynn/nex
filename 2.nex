@@ -5,6 +5,7 @@ x { println("3") }
 y { println("4") }
 z?z { println("z") }
 a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?aaaaaaaaaaaaaaaa { println("L") }
+[^b]en   { println("en") }
 .    { println(".") }
 %%
 package main
