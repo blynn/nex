@@ -5,8 +5,7 @@ import ("bufio";"flag";"fmt";"io";"os";"strings")
 type rule struct {
   regex []int
   code string
-  family int
-  index int
+  id, family, index int
 }
 type Error string
 
@@ -442,17 +441,19 @@ func gen(out io.Writer, x *rule) {
     fmt.Fprintf(out, "    }\n  }\n  panic(\"unreachable\")\n}\n")
   }
   fmt.Fprintf(out, "a%d[%d].acc = acc[:]\n", x.family, x.index);
-  fmt.Fprintf(out, "a%d[%d].f = fun[:]\n}\n", x.family, x.index);
+  fmt.Fprintf(out, "a%d[%d].f = fun[:]\n", x.family, x.index);
+  fmt.Fprintf(out, "a%d[%d].id = %d\n", x.family, x.index, x.id);
+  fmt.Fprintf(out, "}\n")
 }
 func writeActions(out *bufio.Writer, rules []*rule, prefix string) {
   fmt.Fprintf(out, `func(in *bufio.Reader) {
-  nnCtx := %s.NewContext(bufio.NewReader(os.Stdin), 0)
+  nnCtx := %s.NewContext(in, 0)
   for {
     %s.Next(nnCtx)
     if %s.IsDone(nnCtx) { break }
     switch %s.Action(nnCtx) {`, prefix, prefix, prefix, prefix)
-  for i, x := range rules {
-    fmt.Fprintf(out, "\n    case %d:  // %s\n", i, string(x.regex))
+  for _, x := range rules {
+    fmt.Fprintf(out, "\n    case %d:  // %s\n", x.id, string(x.regex))
     out.WriteString(x.code)
   }
   out.WriteString("    }\n  }\n}")
@@ -477,9 +478,11 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
   var rules []*rule
   usercode := false
   familyn := 1
+  id := 0
   var parse func(int)
   parse = func(family int) {
     rulen := 0
+    declvar := func() { fmt.Fprintf(out, "var a%d [%d]dfa\n", family, rulen) }
     for !done {
       skipws()
       if done { break }
@@ -497,7 +500,7 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
       }
       if ">" == string(regex) {
 	if 0 == family { panic("unmatched >") }
-	fmt.Fprintf(out, "var a%d [%d]dfa\n", family, len(rules))
+	declvar()
 	return
       }
       skipws()
@@ -505,6 +508,8 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
       x := new(rule)
       x.index = rulen
       rulen++
+      x.id = id
+      id++
       x.family = family
       x.regex = make([]int, len(regex))
       copy(x.regex, regex)
@@ -512,7 +517,7 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
       case '<':
 	read()
 	parse(familyn)
-	x.code = fmt.Sprintf("{ _nn_.Nest(nnCtx, %d) }\n", familyn)
+	x.code = fmt.Sprintf("{ nnCtx = _nn_.Nest(nnCtx, %d) }\n", familyn)
 	familyn++
       case '{':
 	buf = buf[:0]
@@ -531,13 +536,14 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
       rules = append(rules, x)
     }
     if 0 != family { panic("unmatched <") }
-    fmt.Fprintf(out, "var a%d [%d]dfa\n", family, len(rules))
+    declvar()
   }
   fmt.Fprintf(out, "package %s\n", name)
-  fmt.Fprintf(out, `import ("bufio";"os")
+  fmt.Fprintf(out, `import ("bufio";"os";"strings")
 type dfa struct {
   acc []bool
   f []func(int) int
+  id int
 }
 `)
 
@@ -557,12 +563,14 @@ type dfa struct {
   out.WriteString(`}
 func getAction(c *frame) {
   if -1 == c.match { panic("No match") }
-  c.action, c.match = c.match, -1
+  c.action = c.a[c.match].id
+  c.match = -1
 }
 type frame struct {
   atEOF bool
   action, match, matchn, n int
   buf []int
+  text string
   in *bufio.Reader
   state []int
   a []dfa
@@ -623,6 +631,7 @@ func Next(p interface {}) {
     if jammed {
       c.n = 0
       for i, _ := range c.state { c.state[i] = 0 }
+      c.text = string(c.buf[:c.matchn])
       copy(c.buf, c.buf[c.matchn:])
       c.buf = c.buf[:len(c.buf) - c.matchn]
       getAction(c)
@@ -631,7 +640,12 @@ func Next(p interface {}) {
     c.n++
   }
 }
-func Nest(p interface {}, index int) {
+func Nest(p interface {}, index int) interface {} {
+  stack := p.([]*frame)
+  c := stack[len(stack) - 1]
+  stack = append(stack, newFrame(bufio.NewReader(strings.NewReader(c.text)),
+      index))
+  return stack
 }
 `)
   out.Flush()
