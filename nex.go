@@ -604,9 +604,7 @@ func Next(p interface {}) {
 }
 
 func main() {
-  flag.Parse()
-  if 0 == flag.NArg() {
-    name := "_nn_"
+  run := func(name string, file *os.File) {
     f,er := os.Open(name + ".go", os.O_WRONLY|os.O_CREATE, 0644)
     if f == nil {
       println("nex:", er.String())
@@ -614,8 +612,31 @@ func main() {
     }
     outmain := bufio.NewWriter(os.Stdout)
     out := bufio.NewWriter(f)
-    process(bufio.NewReader(os.Stdin), out, outmain, name)
+    process(bufio.NewReader(file), out, outmain, name)
     f.Close()
+  }
+  flag.Parse()
+  if 0 == flag.NArg() {
+    run("_nn_", os.Stdin)
     return
   }
+  if flag.NArg() > 1 {
+    println("nex: extraneous arguments after", flag.Arg(1))
+    os.Exit(1)
+  }
+  if strings.HasSuffix(flag.Arg(1), ".go") {
+    println("nex: input filename ends with .go:", flag.Arg(1))
+    os.Exit(1)
+  }
+  basename := flag.Arg(0)
+  n := strings.LastIndex(basename, ".")
+  if n >= 0 { basename = basename[:n] }
+  name := "_nn_" + basename
+  f,er := os.Open(flag.Arg(0), os.O_RDONLY, 0)
+  if f == nil {
+    println("nex:", er.String())
+    os.Exit(1)
+  }
+  run(name, f)
+  f.Close()
 }
