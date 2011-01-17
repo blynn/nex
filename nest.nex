@@ -1,9 +1,10 @@
 abc <
-  a { println("A") }
-  b { println("B") }
-  c { println("C") }
+  a { print("A") }
+  b { print("B") }
+  c { print("C") }
 >
-. { println(".") }
+\n { println() }
+. { print(".") }
 %%
 package main
 import "./_nn_"

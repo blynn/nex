@@ -453,13 +453,13 @@ func gen(out io.Writer, x *rule) {
 func writeActions(out *bufio.Writer, rules []*rule, prefix string) {
   fmt.Fprintf(out, `func(in *bufio.Reader) {
   nnCtx := %s.Start(in)
-  for {
+  for nnDone := false; !nnDone; {
     switch %s.Next(nnCtx) {`, prefix, prefix)
   for _, x := range rules {
     fmt.Fprintf(out, "\n    case %d:  // %s\n", x.id, string(x.regex))
     out.WriteString(x.code)
   }
-  out.WriteString("    }\n  }\nnnDone:\n}")
+  out.WriteString("    }\n  }\n}")
 }
 func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
   var r int
@@ -547,7 +547,7 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
     }
     if 0 != family { panic("unmatched <") }
     x := newRule(family, -1)
-    x.code = "goto nnDone\n"
+    x.code = "nnDone = true\n"
     x.regex = []int("[Exit]")
     declvar()
   }
@@ -576,10 +576,11 @@ type family struct {
   }
 
   out.WriteString(`}
-func getAction(c *frame) {
+func getAction(c *frame) int {
   if -1 == c.match { panic("No match") }
   c.action = c.fam.a[c.match].id
   c.match = -1
+  return c.action
 }
 type frame struct {
   atEOF bool
@@ -607,7 +608,6 @@ func Start(in *bufio.Reader) interface{} {
 func Next(p interface {}) int {
   stack := p.([]*frame)
   c := stack[len(stack) - 1]
-  //c.action = -1
   for {
     if c.atEOF { return c.fam.endcase }
     if c.n == len(c.buf) {
@@ -617,8 +617,7 @@ func Next(p interface {}) int {
       case os.EOF:
 	c.atEOF = true
 	if c.n > 0 {
-	  getAction(c)
-	  return c.action
+	  return getAction(c)
 	}
 	return c.fam.endcase
       default: panic(er.String())
@@ -644,8 +643,7 @@ func Next(p interface {}) int {
       c.text = string(c.buf[:c.matchn])
       copy(c.buf, c.buf[c.matchn:])
       c.buf = c.buf[:len(c.buf) - c.matchn]
-      getAction(c)
-      return c.action
+      return getAction(c)
     }
     c.n++
   }
