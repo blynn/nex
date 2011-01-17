@@ -1,0 +1,13 @@
+abc <
+  a { println("A") }
+  b { println("B") }
+  c { println("C") }
+>
+. { println(".") }
+%%
+package main
+import "./_nn_"
+import ("bufio";"os")
+func main() {
+  NN_FUN(bufio.NewReader(os.Stdin))
+}
