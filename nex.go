@@ -525,6 +525,7 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
 	if r == delim && (len(regex) == 0 || regex[len(regex) - 1] != '\\') {
 	  break
 	}
+	if '\n' == r { panic("regex interrupted by newline") }
 	regex = append(regex, r)
 	read()
 	if done { panic("unterminated pattern") }
@@ -623,6 +624,7 @@ func Next(p interface {}) int {
       case os.EOF:
 	c.atEOF = true
 	if c.n > 0 {
+	  c.text = string(c.buf)
 	  return getAction(c)
 	}
 	return c.fam.endcase
