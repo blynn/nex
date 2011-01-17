@@ -1,8 +1,8 @@
-/abc/ <
-  /a/ { print("A") }
-  /b/ { print("B") }
-  /c/ { print("C") }
->
+/abc/ < { print("[") }
+  /a/   { print("A") }
+  /b/   { print("B") }
+  /c/   { print("C") }
+>       { print("]") }
 /\n/ { println() }
 /./ { print(".") }
 //
@@ -10,5 +10,5 @@ package main
 import "./_nn_"
 import ("bufio";"os")
 func main() {
-  NN_FUN(bufio.NewReader(os.Stdin))
+  NN_FUN(_nn_.Start(bufio.NewReader(os.Stdin)))
 }

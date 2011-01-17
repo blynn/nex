@@ -1,5 +1,4 @@
-// Some copy-and-paste from src/pkg/regexp; hopefully this means our regexes
-// will be largely compatible.
+// Substantial copy-and-paste from src/pkg/regexp.
 package main
 import ("bufio";"flag";"fmt";"io";"os";"strings")
 type rule struct {
@@ -451,10 +450,9 @@ func gen(out io.Writer, x *rule) {
   fmt.Fprintf(out, "}\n")
 }
 func writeActions(out *bufio.Writer, rules []*rule, prefix string) {
-  fmt.Fprintf(out, `func(in *bufio.Reader) {
-  nnCtx := %s.Start(in)
+  fmt.Fprintf(out, `func(nnCtx interface {}) {
   for nnDone := false; !nnDone; {
-    switch %s.Next(nnCtx) {`, prefix, prefix)
+    switch %s.Next(nnCtx) {`, prefix)
   for _, x := range rules {
     fmt.Fprintf(out, "\n    case %d:  //%s/\n", x.id, string(x.regex))
     out.WriteString(x.code)
@@ -465,7 +463,6 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
   var r int
   done := false
   regex := make([]int, 0, 8)
-  buf := make([]int, 0, 8)
   read := func() {
     var er os.Error
     r,_,er = in.ReadRune()
@@ -491,6 +488,19 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
     id++
     return x
   }
+  buf := make([]int, 0, 8)
+  readCode := func() string {
+    if '{' != r { panic("expected {") }
+    buf = buf[:0]
+    for {
+      buf = append(buf, r)
+      read()
+      if done { panic("unmatched {") }
+      if '}' == r { break }
+    }
+    buf = append(buf, r)
+    return string(buf)
+  }
   var parse func(int)
   parse = func(family int) {
     rulen := 0
@@ -502,9 +512,10 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
       if '>' == r {
 	if 0 == family { panic("unmatched >") }
 	x := newRule(family, -1)
-	x.code = fmt.Sprintf("nnCtx = %s.Pop(nnCtx)", name)
-	x.regex = []int("[Pop]")
+	x.code = fmt.Sprintf("nnCtx = %s.Pop(nnCtx)\n", name)
 	declvar()
+	skipws()
+	x.code += readCode()
 	return
       }
       delim := r
@@ -528,31 +539,22 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
       rulen++
       x.regex = make([]int, len(regex))
       copy(x.regex, regex)
-      switch r {
-      case '<':
-	read()
+      nested := false
+      if '<' == r {
+	skipws()
+	if done { panic("'<' lacks action") }
+	x.code = fmt.Sprintf("nnCtx = %s.Push(nnCtx, %d)\n", name, familyn)
+	nested = true
+      }
+      x.code += readCode()
+      if nested {
 	parse(familyn)
-	x.code = fmt.Sprintf("{ nnCtx = %s.Push(nnCtx, %d) }", name, familyn)
 	familyn++
-      case '{':
-	buf = buf[:0]
-	for {
-	  buf = append(buf, r)
-	  read()
-	  if done { break }
-	  if '}' == r { break }
-	}
-	if done { panic("unmatched {") }
-	buf = append(buf, r)
-	x.code = string(buf)
-      default:
-        panic("expected { or <")
       }
     }
     if 0 != family { panic("unmatched <") }
     x := newRule(family, -1)
     x.code = "nnDone = true\n"
-    x.regex = []int("[Exit]")
     declvar()
   }
   fmt.Fprintf(out, "package %s\n", name)
@@ -662,6 +664,11 @@ func Push(p interface {}, index int) interface {} {
 func Pop(p interface {}) interface {} {
   stack := p.([]*frame)
   return stack[:len(stack) - 1]
+}
+func Text(p interface {}) string {
+  stack := p.([]*frame)
+  c := stack[len(stack) - 1]
+  return c.text
 }
 `)
   out.Flush()
