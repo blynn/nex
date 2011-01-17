@@ -568,8 +568,8 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer) {
       }
       x.code += readCode()
       if nested {
-	parse(familyn)
 	familyn++
+	parse(familyn-1)
       }
     }
     if 0 != family { panic("unmatched <") }

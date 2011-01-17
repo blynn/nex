@@ -1,10 +1,6 @@
 package nn
-/[^\n]*\n/ < {}
-  /[^ \t\r\n]*/ < {}
-    /./ { nChars++ }
-  > { nWords++ }
-  /./ { nChars++ }
-> { nLines++ }
+/\n/{ nLines++; nChars++ }
+/./{ nChars++ }
 //
 package main
 import ("bufio";"fmt";"os")
@@ -12,8 +8,7 @@ import "./wc.nn"
 func main() {
   nLines := 0
   nChars := 0
-  nWords := 0
   nnCtx := nn.Start(bufio.NewReader(os.Stdin))
   NN_FUN(nnCtx)
-  fmt.Printf("%d %d %d\n", nLines, nWords, nChars)
+  fmt.Printf("%d %d\n", nLines, nChars)
 }
