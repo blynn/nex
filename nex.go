@@ -441,7 +441,7 @@ func gen(out io.Writer, x *rule) {
     for _,e := range v.e {
       m := e.dst.n
       if e.kind == 2 {
-	fmt.Fprintf(out, "    %d <= r && r <= %d: return %d\n",
+	fmt.Fprintf(out, "    case %d <= r && r <= %d: return %d\n",
 	    e.lim[0], e.lim[1], m)
       } else if e.kind == 1 {
 	fmt.Fprintf(out, "    default: return %d\n", m)

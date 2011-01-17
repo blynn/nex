@@ -1,0 +1,23 @@
+package nn
+/[0-9]+/          { println("An integer:", txt()) }
+/[0-9]+\.[0-9]*/  { println("A float:", txt()) }
+/if|then|begin|end|procedure|function/
+                  { println( "A keyword:", txt()) }
+/[a-z][a-z0-9]*/  { println("An identifier:", txt()) }
+/\+|-|\*|\//      { println("An operator:", txt()) }
+/[ \t\n]+/        { /* eat up whitespace */ }
+/./               { println("Unrecognized character:", txt()) }
+//
+package main
+import ("bufio";"os")
+import "./toy.nn"
+func main() {
+  nnCtx := nn.Start(bufio.NewReader(os.Stdin))
+  txt := func() string { return nn.Text(nnCtx) }
+  NN_FUN(nnCtx)
+  // I didn't copy the following line from the original example because it
+  // appears wrong:
+  //   "{"[\^{}}\n]*"}"     /* eat up one-line comments */
+  // I think it should be as follows:
+  //   "{"[^\{\}\n]*"}"     /* eat up one-line comments */
+}
