@@ -36,17 +36,22 @@ func escape(c int) int {
   return -1
 }
 type edge struct {
+  // TODO: Make kind an enum (and use iota)
+  // 2 = rune class edge
+  // 1 = rune edge
+  // 0 = empty edge
+  // -1 = wild edge (".")
   kind int
-  r int
-  dst *node
-  negate bool
-  lim []int
+  r int        // Rune; for rune edges.
+  lim []int    // Pairs of limits for character class edges.
+  negate bool  // True if the character class is negated.
+  dst *node    // Destination node.
 }
 type node struct {
-  e []*edge
-  n int
-  accept bool
-  set []int  // The NFA nodes represented by a DFA node.
+  e []*edge    // Slice of outedges.
+  n int        // Index number. Scoped to a family.
+  accept bool  // True if this is an accepting state.
+  set []int    // The NFA nodes represented by a DFA node.
 }
 func inClass(r int, lim []int) bool {
   for i := 0; i < len(lim); i+=2 {
@@ -459,7 +464,7 @@ func writeActions(out *bufio.Writer, rules []*rule, prefix string) {
   }
   out.WriteString("    }\n  }\n}")
 }
-func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
+func process(in *bufio.Reader, out, outmain *bufio.Writer) {
   var r int
   done := false
   regex := make([]int, 0, 8)
@@ -501,6 +506,20 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
     buf = append(buf, r)
     return string(buf)
   }
+  readWord := func() string {
+    buf = buf[:0]
+    for {
+      buf = append(buf, r)
+      read()
+      if done || strings.IndexRune(" \n\t\r", r) != -1 { break }
+    }
+    return string(buf)
+  }
+  skipws()
+  if done || "package" != readWord() { panic("expected package declaration") }
+  skipws()
+  if done { panic("expected package name") }
+  name := readWord()
   var parse func(int)
   parse = func(family int) {
     rulen := 0
@@ -703,12 +722,12 @@ func main() {
     }
     outmain := bufio.NewWriter(os.Stdout)
     out := bufio.NewWriter(f)
-    process(bufio.NewReader(file), out, outmain, name)
+    process(bufio.NewReader(file), out, outmain)
     f.Close()
   }
   flag.Parse()
   if 0 == flag.NArg() {
-    run("_nn_", os.Stdin)
+    run("_nn", os.Stdin)
     return
   }
   if flag.NArg() > 1 {
@@ -722,7 +741,7 @@ func main() {
   basename := flag.Arg(0)
   n := strings.LastIndex(basename, ".")
   if n >= 0 { basename = basename[:n] }
-  name := "_nn_" + basename
+  name := basename + ".nn"
   f,er := os.Open(flag.Arg(0), os.O_RDONLY, 0)
   if f == nil {
     println("nex:", er.String())

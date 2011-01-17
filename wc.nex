@@ -1,13 +1,14 @@
+package nn
 /\n/{ nLines++; nChars++ }
 /./{ nChars++ }
 //
 package main
 import ("bufio";"fmt";"os")
-import "./_nn_"
+import "./wc.nn"
 func main() {
   nLines := 0
   nChars := 0
-  nnCtx := _nn_.Start(bufio.NewReader(os.Stdin))
+  nnCtx := nn.Start(bufio.NewReader(os.Stdin))
   NN_FUN(nnCtx)
   fmt.Printf("%d %d\n", nLines, nChars)
 }

@@ -6,10 +6,11 @@ if [ -z $1 ]; then
 fi
 dir=$(mktemp -d)
 here=$(pwd)
-cp -l $1 $dir/nex.nex
+f=$(basename $1)
+cp -l $1 $dir/$f
 cd $dir
-nex < nex.nex > go.go
-6g _nn_.go
+nex $f > go.go
+6g ${f%.*}.nn.go
 6g go.go
 6l go.6
 cd $here

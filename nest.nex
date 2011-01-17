@@ -1,3 +1,4 @@
+package nn
 /abc/ < { print("[") }
   /a/   { print("A") }
   /b/   { print("B") }
@@ -7,8 +8,8 @@
 /./ { print(".") }
 //
 package main
-import "./_nn_"
+import "./nest.nn"
 import ("bufio";"os")
 func main() {
-  NN_FUN(_nn_.Start(bufio.NewReader(os.Stdin)))
+  NN_FUN(nn.Start(bufio.NewReader(os.Stdin)))
 }

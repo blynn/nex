@@ -1,12 +1,13 @@
+package nn
 / /{ x++ }
 /#/{ println("rect", x, x+1, y, y+1); x++ }
 /\n/{ x=1; y++ }
 //
 package main
 import ("bufio";"os")
-import "./_nn_"
+import "./peter.nn"
 func main() {
   x := 1
   y := 1
-  NN_FUN(_nn_.Start(bufio.NewReader(os.Stdin)))
+  NN_FUN(nn.Start(bufio.NewReader(os.Stdin)))
 }
