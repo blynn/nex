@@ -1,11 +1,11 @@
-abc <
-  a { print("A") }
-  b { print("B") }
-  c { print("C") }
+/abc/ <
+  /a/ { print("A") }
+  /b/ { print("B") }
+  /c/ { print("C") }
 >
-\n { println() }
-. { print(".") }
-%%
+/\n/ { println() }
+/./ { print(".") }
+//
 package main
 import "./_nn_"
 import ("bufio";"os")

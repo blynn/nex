@@ -456,7 +456,7 @@ func writeActions(out *bufio.Writer, rules []*rule, prefix string) {
   for nnDone := false; !nnDone; {
     switch %s.Next(nnCtx) {`, prefix, prefix)
   for _, x := range rules {
-    fmt.Fprintf(out, "\n    case %d:  // %s\n", x.id, string(x.regex))
+    fmt.Fprintf(out, "\n    case %d:  //%s/\n", x.id, string(x.regex))
     out.WriteString(x.code)
   }
   out.WriteString("    }\n  }\n}")
@@ -499,24 +499,28 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer, name string) {
       skipws()
       if done { break }
       regex = regex[:0]
-      for {
-	regex = append(regex, r)
-	read()
-	if done { break }
-	if strings.IndexRune(" \n\t\r", r) != -1 { break }
-      }
-      if "%%" == string(regex) {
-	if 0 != family { panic("nested '%%'") }
-	usercode = true
-	break
-      }
-      if ">" == string(regex) {
+      if '>' == r {
 	if 0 == family { panic("unmatched >") }
 	x := newRule(family, -1)
 	x.code = fmt.Sprintf("nnCtx = %s.Pop(nnCtx)", name)
 	x.regex = []int("[Pop]")
 	declvar()
 	return
+      }
+      delim := r
+      read()
+      if done { panic("unterminated pattern") }
+      for {
+	if r == delim && (len(regex) == 0 || regex[len(regex) - 1] != '\\') {
+	  break
+	}
+	regex = append(regex, r)
+	read()
+	if done { panic("unterminated pattern") }
+      }
+      if "" == string(regex) {
+	usercode = true
+	break
       }
       skipws()
       if done { panic("last pattern lacks action") }

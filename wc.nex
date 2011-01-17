@@ -1,6 +1,6 @@
-\n  { nLines++; nChars++ }
-.   { nChars++ }
-%%
+/\n/{ nLines++; nChars++ }
+/./{ nChars++ }
+//
 package main
 import ("bufio";"fmt";"os")
 import "./_nn_"
