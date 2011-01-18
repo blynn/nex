@@ -1,0 +1,15 @@
+package nn
+/ +/{ x+=len(txt()) }
+/#+/{ println("rect", x, x+len(txt()), y, y+1); x+=len(txt()) }
+/\n/{ x=1; y++ }
+//
+package main
+import ("bufio";"os")
+import "./peter2.nn"
+func main() {
+  x := 1
+  y := 1
+  nnCtx := nn.Start(bufio.NewReader(os.Stdin))
+  txt := func() string { return nn.Text(nnCtx) }
+  NN_FUN(nnCtx)
+}

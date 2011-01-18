@@ -10,6 +10,7 @@ f=$(basename $1)
 cp -l $1 $dir/$f
 cd $dir
 nex $f > go.go
+rm $f
 6g ${f%.*}.nn.go
 6g go.go
 6l go.6

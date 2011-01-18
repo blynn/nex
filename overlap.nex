@@ -1,0 +1,11 @@
+package nn
+/[a-e]+[d-h]+/ { print("0") }
+/[m-n]+[k-p]+[o-p]+[k-r]+/ { print("1") }
+/./ { print(nn.Text(nnCtx)) }
+//
+package main
+import ("bufio";"os")
+import "./overlap.nn"
+func main() {
+  NN_FUN(nn.Start(bufio.NewReader(os.Stdin)))
+}

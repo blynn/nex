@@ -1,0 +1,42 @@
+package nn
+/[零一二三四五六七八九十百千]+/ { print(zhToInt(txt())) }
+/[٠-٩]/ {
+  // The Eastern Arabic numerals are ٠١٢٣٤٥٦٧٨٩.
+  print([]int(txt())[0] - int('٠'))
+}
+/./{}
+//
+package main
+import ("bufio";"os")
+import "./u.nn"
+func zhToInt(s string) int {
+  n := 0
+  prev := 0
+  f := func(m int) {
+    if 0 == prev { prev = 1 }
+    n += m * prev
+    prev = 0
+  }
+  for _, c := range s {
+    for m, v := range []int("一二三四五六七八九") {
+      if v == c {
+	prev = m+1
+	goto continue2
+      }
+    }
+    switch c {
+    case '零':
+    case '十': f(10)
+    case '百': f(100)
+    case '千': f(1000)
+    }
+continue2:
+  }
+  n += prev
+  return n
+}
+func main() {
+  nnCtx := nn.Start(bufio.NewReader(os.Stdin))
+  txt := func() string { return nn.Text(nnCtx) }
+  NN_FUN(nnCtx)
+}

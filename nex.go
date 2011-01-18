@@ -69,6 +69,47 @@ func gen(out io.Writer, x *rule) {
   // Regex -> NFA
   alph := make(map[int]bool)
   lim := make([]int, 0, 8)
+  var insertLimits func(l, r int)
+  insertLimits = func(l, r int) {
+    var i int
+    for i = 0; i < len(lim); i += 2 {
+      if l <= lim[i+1] { break }
+    }
+    if len(lim) == i || r < lim[i] {
+      lim = append(lim, 0, 0)
+      copy(lim[i+2:], lim[i:])
+      lim[i] = l
+      lim[i+1] = r
+      return
+    }
+    if l < lim[i] {
+      lim = append(lim, 0, 0)
+      copy(lim[i+2:], lim[i:])
+      lim[i+1] = lim[i]-1
+      lim[i] = l
+      insertLimits(lim[i], r)
+      return
+    }
+    if l > lim[i] {
+      lim = append(lim, 0, 0)
+      copy(lim[i+2:], lim[i:])
+      lim[i+1] = l-1
+      lim[i+2] = l
+      insertLimits(l, r)
+      return
+    }
+    // l == lim[i]
+    if r == lim[i+1] { return }
+    if r < lim[i+1] {
+      lim = append(lim, 0, 0)
+      copy(lim[i+2:], lim[i:])
+      lim[i] = l
+      lim[i+1] = r
+      lim[i+2] = r + 1
+      return
+    }
+    insertLimits(lim[i+1]+1, r)
+  }
   pos := 0
   n := 0
   newNode := func() *node {
@@ -157,7 +198,7 @@ func gen(out io.Writer, x *rule) {
 	  if left == c {
 	    alph[c] = true
 	  } else {
-	    lim = append(lim, left, c)
+	    insertLimits(left, c)
 	  }
 	  left = -1
 	default:
@@ -420,7 +461,6 @@ func gen(out io.Writer, x *rule) {
     newWildEdge(v, get(states))
   }
   n = dfacount
-
   // DFA -> Go
   // TODO: Literal arrays instead of a series of assignments.
   fmt.Fprintf(out, "{\nvar acc [%d]bool\nvar fun [%d]func(int) int\n", n, n)
