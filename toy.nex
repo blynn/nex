@@ -10,16 +10,15 @@ package nn
 /{[^\{\}\n]*}/    { /* eat up one-line comments */ }
 //
 package main
-import ("bufio";"os")
+import "os"
 import "./toy.nn"
 func main() {
-  nnCtx := nn.Start(bufio.NewReader(os.Stdin))
+  nnCtx := nn.Start(os.Stdin)
   txt := func() string { return nn.Text(nnCtx) }
   NN_FUN(nnCtx)
-  // I changed one line from the original example because it appears to be
-  // wrong:
+  // I changed a regex because the original appears to be wrong:
   //   "{"[\^{}}\n]*"}"     /* eat up one-line comments */
   //
-  // The example has a few other bugs, e.g. a missing '<' before "math.h",
+  // The original has a few other bugs, e.g. a missing '<' before "math.h",
   // and a missing noyywrap option prevents compilation.
 }

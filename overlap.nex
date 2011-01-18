@@ -4,8 +4,8 @@ package nn
 /./ { print(nn.Text(nnCtx)) }
 //
 package main
-import ("bufio";"os")
+import "os"
 import "./overlap.nn"
 func main() {
-  NN_FUN(nn.Start(bufio.NewReader(os.Stdin)))
+  NN_FUN(nn.Start(os.Stdin))
 }

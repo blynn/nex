@@ -1,17 +1,17 @@
 package nn
 /[^\n]*\n/ < { isrobot = false; isrob = false }
-/robot/      { isrobot = true }
-/rob/        { isrob = true }
-/./{}
-> { f() }
+  /robot/    { isrobot = true }
+  /rob/      { isrob = true }
+  /./{}
+>            { f() }
 /./{}
 //
 package main
-import ("bufio";"os")
+import "os"
 import "./rob.nn"
 func main() {
   var isrobot, isrob bool
-  nnCtx := nn.Start(bufio.NewReader(os.Stdin))
+  nnCtx := nn.Start(os.Stdin)
   f := func() { if isrob && !isrobot { print(nn.Text(nnCtx)) } }
   NN_FUN(nnCtx)
 }

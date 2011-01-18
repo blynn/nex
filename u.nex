@@ -7,7 +7,7 @@ package nn
 /./{}
 //
 package main
-import ("bufio";"os")
+import "os"
 import "./u.nn"
 func zhToInt(s string) int {
   n := 0
@@ -36,7 +36,7 @@ continue2:
   return n
 }
 func main() {
-  nnCtx := nn.Start(bufio.NewReader(os.Stdin))
+  nnCtx := nn.Start(os.Stdin)
   txt := func() string { return nn.Text(nnCtx) }
   NN_FUN(nnCtx)
 }

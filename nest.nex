@@ -9,7 +9,7 @@ package nn
 //
 package main
 import "./nest.nn"
-import ("bufio";"os")
+import "os"
 func main() {
-  NN_FUN(nn.Start(bufio.NewReader(os.Stdin)))
+  NN_FUN(nn.Start(os.Stdin))
 }

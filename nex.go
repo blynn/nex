@@ -618,7 +618,7 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer) {
     declvar()
   }
   fmt.Fprintf(out, "package %s\n", name)
-  fmt.Fprintf(out, `import ("bufio";"os";"strings")
+  fmt.Fprintf(out, `import ("bufio";"io";"os";"strings")
 type dfa struct {
   acc []bool
   f []func(int) int
@@ -666,9 +666,9 @@ func newFrame(in *bufio.Reader, index int) *frame {
   f.state = make([]int, len(f.fam.a))
   return f
 }
-func Start(in *bufio.Reader) interface{} {
+func Start(in io.Reader) interface{} {
   stack := make([]*frame, 0, 4)
-  stack = append(stack, newFrame(in, 0))
+  stack = append(stack, newFrame(bufio.NewReader(in), 0))
   return stack
 }
 func Next(p interface {}) int {

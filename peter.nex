@@ -4,10 +4,10 @@ package nn
 /\n/{ x=1; y++ }
 //
 package main
-import ("bufio";"os")
+import "os"
 import "./peter.nn"
 func main() {
   x := 1
   y := 1
-  NN_FUN(nn.Start(bufio.NewReader(os.Stdin)))
+  NN_FUN(nn.Start(os.Stdin))
 }
