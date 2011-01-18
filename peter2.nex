@@ -9,7 +9,7 @@ import "./peter2.nn"
 func main() {
   x := 1
   y := 1
-  nnCtx := nn.Start(os.Stdin)
-  txt := func() string { return nn.Text(nnCtx) }
-  NN_FUN(nnCtx)
+  lex := nn.NewLexer(os.Stdin)
+  txt := func() string { return lex.Text() }
+  NN_FUN(lex)
 }

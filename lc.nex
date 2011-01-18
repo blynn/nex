@@ -8,7 +8,6 @@ import "./lc.nn"
 func main() {
   nLines := 0
   nChars := 0
-  nnCtx := nn.Start(os.Stdin)
-  NN_FUN(nnCtx)
+  NN_FUN(nn.NewLexer(os.Stdin))
   fmt.Printf("%d %d\n", nLines, nChars)
 }

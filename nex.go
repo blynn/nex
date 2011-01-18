@@ -495,14 +495,14 @@ func gen(out io.Writer, x *rule) {
   fmt.Fprintf(out, "}\n")
 }
 func writeActions(out *bufio.Writer, rules []*rule, prefix string) {
-  fmt.Fprintf(out, `func(nnCtx interface {}) {
+  fmt.Fprintf(out, `func(yylex %s.Lexer) {
   for nnDone := false; !nnDone; {
-    switch %s.Next(nnCtx) {`, prefix)
+    switch yylex.NextAction() {`, prefix)
   for _, x := range rules {
     fmt.Fprintf(out, "\n    case %d:  //%s/\n", x.id, string(x.regex))
     out.WriteString(x.code)
   }
-  out.WriteString("    }\n  }\n}")
+  out.WriteString("    }\n  }\n  }")
 }
 func process(in *bufio.Reader, out, outmain *bufio.Writer) {
   var r int
@@ -571,7 +571,7 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer) {
       if '>' == r {
 	if 0 == family { panic("unmatched >") }
 	x := newRule(family, -1)
-	x.code = fmt.Sprintf("nnCtx = %s.Pop(nnCtx)\n", name)
+	x.code = "yylex = yylex.Pop()\n"
 	declvar()
 	skipws()
 	x.code += readCode()
@@ -603,7 +603,7 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer) {
       if '<' == r {
 	skipws()
 	if done { panic("'<' lacks action") }
-	x.code = fmt.Sprintf("nnCtx = %s.Push(nnCtx, %d)\n", name, familyn)
+	x.code = fmt.Sprintf("yylex = yylex.Push(%d)\n", familyn)
 	nested = true
       }
       x.code += readCode()
@@ -666,13 +666,13 @@ func newFrame(in *bufio.Reader, index int) *frame {
   f.state = make([]int, len(f.fam.a))
   return f
 }
-func Start(in io.Reader) interface{} {
+type Lexer []*frame
+func NewLexer(in io.Reader) Lexer {
   stack := make([]*frame, 0, 4)
   stack = append(stack, newFrame(bufio.NewReader(in), 0))
   return stack
 }
-func Next(p interface {}) int {
-  stack := p.([]*frame)
+func (stack Lexer) NextAction() int {
   c := stack[len(stack) - 1]
   for {
     if c.atEOF { return c.fam.endcase }
@@ -716,18 +716,15 @@ func Next(p interface {}) int {
   }
   panic("unreachable")
 }
-func Push(p interface {}, index int) interface {} {
-  stack := p.([]*frame)
+func (stack Lexer) Push(index int) Lexer {
   c := stack[len(stack) - 1]
   return append(stack,
       newFrame(bufio.NewReader(strings.NewReader(c.text)), index))
 }
-func Pop(p interface {}) interface {} {
-  stack := p.([]*frame)
+func (stack Lexer) Pop() Lexer {
   return stack[:len(stack) - 1]
 }
-func Text(p interface {}) string {
-  stack := p.([]*frame)
+func (stack Lexer) Text() string {
   c := stack[len(stack) - 1]
   return c.text
 }

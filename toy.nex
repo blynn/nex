@@ -13,9 +13,9 @@ package main
 import "os"
 import "./toy.nn"
 func main() {
-  nnCtx := nn.Start(os.Stdin)
-  txt := func() string { return nn.Text(nnCtx) }
-  NN_FUN(nnCtx)
+  lex := nn.NewLexer(os.Stdin)
+  txt := func() string { return lex.Text() }
+  NN_FUN(lex)
   // I changed a regex because the original appears to be wrong:
   //   "{"[\^{}}\n]*"}"     /* eat up one-line comments */
   //

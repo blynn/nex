@@ -11,5 +11,5 @@ package main
 import "./nest.nn"
 import "os"
 func main() {
-  NN_FUN(nn.Start(os.Stdin))
+  NN_FUN(nn.NewLexer(os.Stdin))
 }

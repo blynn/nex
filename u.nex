@@ -36,7 +36,7 @@ continue2:
   return n
 }
 func main() {
-  nnCtx := nn.Start(os.Stdin)
-  txt := func() string { return nn.Text(nnCtx) }
-  NN_FUN(nnCtx)
+  lex := nn.Start(os.Stdin)
+  txt := func() string { return lex.Text() }
+  NN_FUN(lex)
 }

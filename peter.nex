@@ -9,5 +9,5 @@ import "./peter.nn"
 func main() {
   x := 1
   y := 1
-  NN_FUN(nn.Start(os.Stdin))
+  NN_FUN(nn.NewLexer(os.Stdin))
 }
