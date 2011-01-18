@@ -10,9 +10,7 @@ package main
 import ("fmt";"os")
 import "./wc.nn"
 func main() {
-  nLines := 0
-  nChars := 0
-  nWords := 0
+  var nLines, nWords, nChars int
   NN_FUN(nn.NewLexer(os.Stdin))
   fmt.Printf("%d %d %d\n", nLines, nWords, nChars)
 }

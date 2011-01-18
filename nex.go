@@ -67,9 +67,26 @@ func gen(out io.Writer, x *rule) {
   }
   s := x.regex
   // Regex -> NFA
+  // We cannot have our alphabet be all Unicode characters. Instead,
+  // we compute an alphabet for each regex:
+  //
+  //   1. Singles: we add single characters used in the regex: any character
+  //   not in a range. These are held in `alph`.
+  //   2. Ranges: entire ranges become elements of the alphabet. If ranges in
+  //   the same expression overlap, we break them up into non-overlapping
+  //   ranges. The generated code checks singles before ranges, so there's no
+  //   need to break up a range if it contains a single. These are maintained
+  //   in sorted order in `lim`.
+  //   3. Wild: we add an element representing all other characters.
+  //
+  // e.g. the alphabet of /[0-9]*[Ee][2-5]*/ is alph: { E, e },
+  // lim: { [0-1], [2-5], [6-9] } and the wild element.
   alph := make(map[int]bool)
   lim := make([]int, 0, 8)
   var insertLimits func(l, r int)
+  // Insert a new range [l-r] into `lim`, breaking it up if it overlaps, and
+  // discarding it if it coincides with an existing range. We keep `lim`
+  // sorted.
   insertLimits = func(l, r int) {
     var i int
     for i = 0; i < len(lim); i += 2 {
@@ -494,9 +511,21 @@ func gen(out io.Writer, x *rule) {
   fmt.Fprintf(out, "a%d[%d].id = %d\n", x.family, x.index, x.id);
   fmt.Fprintf(out, "}\n")
 }
-func writeActions(out *bufio.Writer, rules []*rule, prefix string) {
+func writeNNLex(out *bufio.Writer, rules []*rule, prefix string) {
+  out.WriteString(`func (yylex Lexer) Error(e string) {
+  panic(e)
+}
+func (yylex Lexer) Lex(lval *yySymType) int {
+  switch yylex.NextAction() {`)
+  for _, x := range rules {
+    fmt.Fprintf(out, "\n  case %d:  //%s/\n", x.id, string(x.regex))
+    out.WriteString(x.code)
+  }
+  out.WriteString("  }\n}")
+}
+func writeNNFun(out *bufio.Writer, rules []*rule, prefix string) {
   fmt.Fprintf(out, `func(yylex %s.Lexer) {
-  for nnDone := false; !nnDone; {
+  for !yylex.IsDone() {
     switch yylex.NextAction() {`, prefix)
   for _, x := range rules {
     fmt.Fprintf(out, "\n    case %d:  //%s/\n", x.id, string(x.regex))
@@ -614,7 +643,7 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer) {
     }
     if 0 != family { panic("unmatched <") }
     x := newRule(family, -1)
-    x.code = "nnDone = true\n"
+    x.code = "// [END]\n"
     declvar()
   }
   fmt.Fprintf(out, "package %s\n", name)
@@ -671,6 +700,9 @@ func NewLexer(in io.Reader) Lexer {
   stack := make([]*frame, 0, 4)
   stack = append(stack, newFrame(bufio.NewReader(in), 0))
   return stack
+}
+func (stack Lexer) IsDone() bool {
+  return 1 == len(stack) && stack[0].atEOF
 }
 func (stack Lexer) NextAction() int {
   c := stack[len(stack) - 1]
@@ -734,14 +766,18 @@ func (stack Lexer) Text() string {
   if !usercode { return }
   skipws()
   buf = buf[:0]
-  const macro = "NN_FUN"
+  const funmac = "NN_FUN"
+  const lexmac = "NN_LEX"
   for !done {
     buf = append(buf, r)
-    if macro[0:len(buf)] != string(buf) {
+    if funmac[0:len(buf)] != string(buf) && lexmac[0:len(buf)] != string(buf) {
       outmain.WriteString(string(buf))
       buf = buf[:0]
-    } else if len(macro) == len(buf) {
-      writeActions(outmain, rules, name)
+    } else if funmac == string(buf) {
+      writeNNFun(outmain, rules, name)
+      buf = buf[:0]
+    } else if lexmac == string(buf) {
+      writeNNLex(outmain, rules, name)
       buf = buf[:0]
     }
     read()
