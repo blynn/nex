@@ -1,11 +1,10 @@
 /[ \t]/  { /* Skip blanks and tabs. */ }
-/[0-9]*/ { lval.N,_ = strconv.Atoi(yylex.Text()); return NUM }
+/[0-9]*/ { lval.n,_ = strconv.Atoi(yylex.Text()); return NUM }
 /./ { return int(yylex.Text()[0]) }
 //
 package main
 import "strconv"
-import . "./y"
 NN_LEX
 func main() {
-  YYParse(NewLexer(os.Stdin))
+  yyParse(NewLexer(os.Stdin))
 }

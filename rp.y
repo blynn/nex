@@ -1,12 +1,10 @@
-/* s/yySymType/YYSymType/g and s/yyParse/YYParse/g on the generated parser, and
- * this will work with rp.nex
- */
+/* nex rp.nex && goyacc rp.y && 6g rp.nn.go y.go && 6l rp.nn.6 */
 %{
-package rp
+package main
 import "fmt"
 %}
 
-%union { N int }
+%union { n int }
 
 %token NUM
 %%
@@ -15,15 +13,15 @@ input:    /* empty */
 ;
 
 line:     '\n'
-       | exp '\n'      { println($1.N); }
+       | exp '\n'      { println($1.n); }
 ;
 
-exp:     NUM           { $$.N = $1.N;        }
-       | exp exp '+'   { $$.N = $1.N + $2.N; }
-       | exp exp '-'   { $$.N = $1.N - $2.N; }
-       | exp exp '*'   { $$.N = $1.N * $2.N; }
-       | exp exp '/'   { $$.N = $1.N / $2.N; }
+exp:     NUM           { $$.n = $1.n;        }
+       | exp exp '+'   { $$.n = $1.n + $2.n; }
+       | exp exp '-'   { $$.n = $1.n - $2.n; }
+       | exp exp '*'   { $$.n = $1.n * $2.n; }
+       | exp exp '/'   { $$.n = $1.n / $2.n; }
 	/* Unary minus    */
-       | exp 'n'       { $$.N = -$1.N;       }
+       | exp 'n'       { $$.n = -$1.n;       }
 ;
 %%

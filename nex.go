@@ -516,7 +516,7 @@ func writeNNLex(out *bufio.Writer, rules []*rule) {
   out.WriteString(`func (yylex Lexer) Error(e string) {
   panic(e)
 }
-func (yylex Lexer) Lex(lval *YYSymType) int {
+func (yylex Lexer) Lex(lval *yySymType) int {
   for !yylex.IsDone() {
     switch yylex.NextAction() {`)
   for _, x := range rules {
