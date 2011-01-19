@@ -1,15 +1,12 @@
-package nn
 / +/{ x+=len(txt()) }
 /#+/{ println("rect", x, x+len(txt()), y, y+1); x+=len(txt()) }
 /\n/{ x=1; y++ }
 //
 package main
-import "os"
-import "./peter2.nn"
 func main() {
   x := 1
   y := 1
-  lex := nn.NewLexer(os.Stdin)
+  lex := NewLexer(os.Stdin)
   txt := func() string { return lex.Text() }
   NN_FUN(lex)
 }

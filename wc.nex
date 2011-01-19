@@ -1,4 +1,3 @@
-package nn
 /[^\n]*\n/ < {}
   /[^ \t\r\n]*/ < {}
     /./  { nChars++ }
@@ -7,10 +6,9 @@ package nn
 >        { nLines++ }
 //
 package main
-import ("fmt";"os")
-import "./wc.nn"
+import "fmt"
 func main() {
   var nLines, nWords, nChars int
-  NN_FUN(nn.NewLexer(os.Stdin))
+  NN_FUN(NewLexer(os.Stdin))
   fmt.Printf("%d %d %d\n", nLines, nWords, nChars)
 }

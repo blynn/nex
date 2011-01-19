@@ -1,4 +1,3 @@
-package nn
 /abc/ < { print("[") }
   /a/   { print("A") }
   /b/   { print("B") }
@@ -8,8 +7,6 @@ package nn
 /./ { print(".") }
 //
 package main
-import "./nest.nn"
-import "os"
 func main() {
-  NN_FUN(nn.NewLexer(os.Stdin))
+  NN_FUN(NewLexer(os.Stdin))
 }

@@ -1,4 +1,3 @@
-package nn
 /[0-9]+/          { println("An integer:", txt()) }
 /[0-9]+\.[0-9]*/  { println("A float:", txt()) }
 /if|then|begin|end|procedure|function/
@@ -10,10 +9,8 @@ package nn
 /{[^\{\}\n]*}/    { /* eat up one-line comments */ }
 //
 package main
-import "os"
-import "./toy.nn"
 func main() {
-  lex := nn.NewLexer(os.Stdin)
+  lex := NewLexer(os.Stdin)
   txt := func() string { return lex.Text() }
   NN_FUN(lex)
   // I changed a regex because the original appears to be wrong:

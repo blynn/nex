@@ -1,6 +1,7 @@
 // Substantial copy-and-paste from src/pkg/regexp.
 package main
 import ("bufio";"flag";"fmt";"io";"os";"strings")
+import ("go/parser";"go/printer";"go/token")
 type rule struct {
   regex []int
   code string
@@ -511,7 +512,7 @@ func gen(out io.Writer, x *rule) {
   fmt.Fprintf(out, "a%d[%d].id = %d\n", x.family, x.index, x.id);
   fmt.Fprintf(out, "}\n")
 }
-func writeNNLex(out *bufio.Writer, rules []*rule, prefix string) {
+func writeNNLex(out *bufio.Writer, rules []*rule) {
   out.WriteString(`func (yylex Lexer) Error(e string) {
   panic(e)
 }
@@ -523,17 +524,19 @@ func (yylex Lexer) Lex(lval *yySymType) int {
   }
   out.WriteString("  }\n}")
 }
-func writeNNFun(out *bufio.Writer, rules []*rule, prefix string) {
-  fmt.Fprintf(out, `func(yylex %s.Lexer) {
+func writeNNFun(out *bufio.Writer, rules []*rule) {
+  out.WriteString(`func(yylex Lexer) {
   for !yylex.IsDone() {
-    switch yylex.NextAction() {`, prefix)
+    switch yylex.NextAction() {`)
   for _, x := range rules {
     fmt.Fprintf(out, "\n    case %d:  //%s/\n", x.id, string(x.regex))
     out.WriteString(x.code)
   }
   out.WriteString("    }\n  }\n  }")
 }
-func process(in *bufio.Reader, out, outmain *bufio.Writer) {
+func process(output io.Writer, input io.Reader) {
+  in := bufio.NewReader(input)
+  out := bufio.NewWriter(output)
   var r int
   done := false
   regex := make([]int, 0, 8)
@@ -575,24 +578,13 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer) {
     buf = append(buf, r)
     return string(buf)
   }
-  readWord := func() string {
-    buf = buf[:0]
-    for {
-      buf = append(buf, r)
-      read()
-      if done || strings.IndexRune(" \n\t\r", r) != -1 { break }
-    }
-    return string(buf)
-  }
-  skipws()
-  if done || "package" != readWord() { panic("expected package declaration") }
-  skipws()
-  if done { panic("expected package name") }
-  name := readWord()
+  var decls string
   var parse func(int)
   parse = func(family int) {
     rulen := 0
-    declvar := func() { fmt.Fprintf(out, "var a%d [%d]dfa\n", family, rulen) }
+    declvar := func() {
+      decls += fmt.Sprintf("var a%d [%d]dfa\n", family, rulen)
+    }
     for !done {
       skipws()
       if done { break }
@@ -646,7 +638,27 @@ func process(in *bufio.Reader, out, outmain *bufio.Writer) {
     x.code = "// [END]\n"
     declvar()
   }
-  fmt.Fprintf(out, "package %s\n", name)
+  parse(0)
+
+  if !usercode { return }
+
+  skipws()
+  buf = buf[:0]
+  for !done {
+    buf = append(buf, r)
+    read()
+  }
+  // TODO: Use go/parser to replace NN_FUN and NN_LEX with generated code.
+  fs := token.NewFileSet()
+  t,err := parser.ParseFile(fs, "", string(buf), parser.ImportsOnly)
+  if err != nil { panic(err.String()) }
+  printer.Fprint(out, fs, t)
+  for m := (<-fs.Files()).LineCount(); m > 1; m-- {
+    i := 0
+    for '\n' != buf[i] { i++ }
+    buf = buf[i+1:]
+  }
+
   fmt.Fprintf(out, `import ("bufio";"io";"os";"strings")
 type dfa struct {
   acc []bool
@@ -658,9 +670,7 @@ type family struct {
   endcase int
 }
 `)
-
-  parse(0)
-
+  out.WriteString(decls)
   out.WriteString("var a []family\n")
   out.WriteString("func init() {\n")
 
@@ -761,46 +771,34 @@ func (stack Lexer) Text() string {
   return c.text
 }
 `)
-  out.Flush()
 
-  if !usercode { return }
-  skipws()
-  buf = buf[:0]
+  m := 0
   const funmac = "NN_FUN"
   const lexmac = "NN_LEX"
-  for !done {
-    buf = append(buf, r)
-    if funmac[0:len(buf)] != string(buf) && lexmac[0:len(buf)] != string(buf) {
-      outmain.WriteString(string(buf))
-      buf = buf[:0]
-    } else if funmac == string(buf) {
-      writeNNFun(outmain, rules, name)
-      buf = buf[:0]
-    } else if lexmac == string(buf) {
-      writeNNLex(outmain, rules, name)
-      buf = buf[:0]
+  for m < len(buf) {
+    m++;
+    if funmac[:m] != string(buf[:m]) && lexmac[:m] != string(buf[:m]) {
+      out.WriteString(string(buf[:m]))
+      buf = buf[m:]
+      m = 0
+    } else if funmac == string(buf[:m]) {
+      writeNNFun(out, rules)
+      buf = buf[m:]
+      m = 0
+    } else if lexmac == string(buf[:m]) {
+      writeNNLex(out, rules)
+      buf = buf[m:]
+      m = 0
     }
-    read()
   }
-  outmain.WriteString(string(buf))
-  outmain.Flush()
+  out.WriteString(string(buf))
+  out.Flush()
 }
 
 func main() {
-  run := func(name string, file *os.File) {
-    f,er := os.Open(name + ".go", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-    if f == nil {
-      println("nex:", er.String())
-      os.Exit(1)
-    }
-    outmain := bufio.NewWriter(os.Stdout)
-    out := bufio.NewWriter(f)
-    process(bufio.NewReader(file), out, outmain)
-    f.Close()
-  }
   flag.Parse()
   if 0 == flag.NArg() {
-    run("_nn", os.Stdin)
+    process(os.Stdout, os.Stdin)
     return
   }
   if flag.NArg() > 1 {
@@ -814,12 +812,18 @@ func main() {
   basename := flag.Arg(0)
   n := strings.LastIndex(basename, ".")
   if n >= 0 { basename = basename[:n] }
-  name := basename + ".nn"
+  name := basename + ".nn.go"
   f,er := os.Open(flag.Arg(0), os.O_RDONLY, 0)
   if f == nil {
     println("nex:", er.String())
     os.Exit(1)
   }
-  run(name, f)
+  outf,er := os.Open(name + ".go", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+  if outf == nil {
+    println("nex:", er.String())
+    os.Exit(1)
+  }
+  process(outf, f)
+  outf.Close()
   f.Close()
 }

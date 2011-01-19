@@ -1,4 +1,3 @@
-package nn
 /[零一二三四五六七八九十百千]+/ { print(zhToInt(txt())) }
 /[٠-٩]/ {
   // The Eastern Arabic numerals are ٠١٢٣٤٥٦٧٨٩.
@@ -7,8 +6,6 @@ package nn
 /./{}
 //
 package main
-import "os"
-import "./u.nn"
 func zhToInt(s string) int {
   n := 0
   prev := 0
@@ -36,7 +33,7 @@ continue2:
   return n
 }
 func main() {
-  lex := nn.Start(os.Stdin)
+  lex := NewLexer(os.Stdin)
   txt := func() string { return lex.Text() }
   NN_FUN(lex)
 }

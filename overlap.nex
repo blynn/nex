@@ -1,12 +1,9 @@
-package nn
 /[a-e]+[d-h]+/ { print("0") }
-/[m-n]+[k-p]+[o-p]+[k-r]+/ { print("1") }
+/[m-n]+[k-p]+[^k-r]+[o-p]+/ { print("1") }
 /./ { print(lex.Text()) }
 //
 package main
-import "os"
-import "./overlap.nn"
 func main() {
-  lex := nn.NewLexer(os.Stdin)
+  lex := NewLexer(os.Stdin)
   NN_FUN(lex)
 }

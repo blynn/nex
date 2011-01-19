@@ -1,13 +1,10 @@
-package nn
 /\n/{ nLines++; nChars++ }
 /./{ nChars++ }
 //
 package main
-import ("fmt";"os")
-import "./lc.nn"
+import "fmt"
 func main() {
-  nLines := 0
-  nChars := 0
-  NN_FUN(nn.NewLexer(os.Stdin))
+  var nLines, nChars int
+  NN_FUN(NewLexer(os.Stdin))
   fmt.Printf("%d %d\n", nLines, nChars)
 }

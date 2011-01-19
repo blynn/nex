@@ -1,4 +1,3 @@
-package nn
 /[^\n]*\n/ < { isrobot = false; isrob = false }
   /robot/    { isrobot = true }
   /rob/      { isrob = true }
@@ -7,11 +6,9 @@ package nn
 /./{}
 //
 package main
-import "os"
-import "./rob.nn"
 func main() {
   var isrobot, isrob bool
-  lex := nn.NewLexer(os.Stdin)
+  lex := NewLexer(os.Stdin)
   f := func() { if isrob && !isrobot { print(lex.Text()) } }
   NN_FUN(lex)
 }
