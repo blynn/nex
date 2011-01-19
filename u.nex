@@ -1,15 +1,15 @@
-/[零一二三四五六七八九十百千]+/ { print(zhToInt(txt())) }
+/[零一二三四五六七八九十百千]+/ { fmt.Print(zhToInt(txt())) }
 /[٠-٩]/ {
   // The above character class might show up right-to-left in a browser.
   // The equivalent of 0 should be on the left, and the equivalent of 9 should
   // be on the right.
   //
   // The Eastern Arabic numerals are ٠١٢٣٤٥٦٧٨٩.
-  print([]int(txt())[0] - int('٠'))
+  fmt.Print([]int(txt())[0] - int('٠'))
 }
-/./{}
 //
 package main
+import "fmt"
 func zhToInt(s string) int {
   n := 0
   prev := 0

@@ -1,14 +1,12 @@
 /[^\n]*\n/ < { isrobot = false; isrob = false }
   /robot/    { isrobot = true }
   /rob/      { isrob = true }
-  /./{}
->            { f() }
-/./{}
+>            { if isrob && !isrobot { fmt.Print(lex.Text()) } }
 //
 package main
+import "fmt"
 func main() {
   var isrobot, isrob bool
   lex := NewLexer(os.Stdin)
-  f := func() { if isrob && !isrobot { print(lex.Text()) } }
   NN_FUN(lex)
 }

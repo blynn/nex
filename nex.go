@@ -519,7 +519,8 @@ func writeLex(out *bufio.Writer, rules []*rule) {
 }
 func (yylex Lexer) Lex(lval *yySymType) int {
   for !yylex.isDone() {
-    switch yylex.nextAction() {`)
+    switch yylex.nextAction() {
+    case -1:`)
   for _, x := range rules {
     fmt.Fprintf(out, "\n    case %d:  //%s/\n", x.id, string(x.regex))
     out.WriteString(x.code)
@@ -529,7 +530,8 @@ func (yylex Lexer) Lex(lval *yySymType) int {
 func writeNNFun(out *bufio.Writer, rules []*rule) {
   out.WriteString(`func(yylex Lexer) {
   for !yylex.isDone() {
-    switch yylex.nextAction() {`)
+    switch yylex.nextAction() {
+    case -1:`)
   for _, x := range rules {
     fmt.Fprintf(out, "\n    case %d:  //%s/\n", x.id, string(x.regex))
     out.WriteString(x.code)
@@ -688,7 +690,7 @@ type family struct {
 
   out.WriteString(`}
 func getAction(c *frame) int {
-  if -1 == c.match { panic("No match") }
+  if -1 == c.match { return -1 }
   c.action = c.fam.a[c.match].id
   c.match = -1
   return c.action
@@ -753,12 +755,14 @@ func (stack Lexer) nextAction() int {
       }
     }
     if jammed {
+      a := getAction(c)
+      if -1 == a { c.matchn = c.n + 1 }
       c.n = 0
       for i, _ := range c.state { c.state[i] = 0 }
       c.text = string(c.buf[:c.matchn])
       copy(c.buf, c.buf[c.matchn:])
       c.buf = c.buf[:len(c.buf) - c.matchn]
-      return getAction(c)
+      return a
     }
     c.n++
   }
