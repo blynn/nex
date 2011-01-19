@@ -512,23 +512,24 @@ func gen(out io.Writer, x *rule) {
   fmt.Fprintf(out, "a%d[%d].id = %d\n", x.family, x.index, x.id);
   fmt.Fprintf(out, "}\n")
 }
-func writeNNLex(out *bufio.Writer, rules []*rule) {
+var standalone *bool
+func writeLex(out *bufio.Writer, rules []*rule) {
   out.WriteString(`func (yylex Lexer) Error(e string) {
   panic(e)
 }
 func (yylex Lexer) Lex(lval *yySymType) int {
-  for !yylex.IsDone() {
-    switch yylex.NextAction() {`)
+  for !yylex.isDone() {
+    switch yylex.nextAction() {`)
   for _, x := range rules {
     fmt.Fprintf(out, "\n    case %d:  //%s/\n", x.id, string(x.regex))
     out.WriteString(x.code)
   }
-  out.WriteString("    }\n  }\n  return 0\n}")
+  out.WriteString("    }\n  }\n  return 0\n}\n")
 }
 func writeNNFun(out *bufio.Writer, rules []*rule) {
   out.WriteString(`func(yylex Lexer) {
-  for !yylex.IsDone() {
-    switch yylex.NextAction() {`)
+  for !yylex.isDone() {
+    switch yylex.nextAction() {`)
   for _, x := range rules {
     fmt.Fprintf(out, "\n    case %d:  //%s/\n", x.id, string(x.regex))
     out.WriteString(x.code)
@@ -593,7 +594,7 @@ func process(output io.Writer, input io.Reader) {
       if '>' == r {
 	if 0 == family { panic("unmatched >") }
 	x := newRule(family, -1)
-	x.code = "yylex = yylex.Pop()\n"
+	x.code = "yylex = yylex.pop()\n"
 	declvar()
 	skipws()
 	x.code += readCode()
@@ -625,7 +626,7 @@ func process(output io.Writer, input io.Reader) {
       if '<' == r {
 	skipws()
 	if done { panic("'<' lacks action") }
-	x.code = fmt.Sprintf("yylex = yylex.Push(%d)\n", familyn)
+	x.code = fmt.Sprintf("yylex = yylex.push(%d)\n", familyn)
 	nested = true
       }
       x.code += readCode()
@@ -711,10 +712,10 @@ func NewLexer(in io.Reader) Lexer {
   stack = append(stack, newFrame(bufio.NewReader(in), 0))
   return stack
 }
-func (stack Lexer) IsDone() bool {
+func (stack Lexer) isDone() bool {
   return 1 == len(stack) && stack[0].atEOF
 }
-func (stack Lexer) NextAction() int {
+func (stack Lexer) nextAction() int {
   c := stack[len(stack) - 1]
   for {
     if c.atEOF { return c.fam.endcase }
@@ -758,12 +759,12 @@ func (stack Lexer) NextAction() int {
   }
   panic("unreachable")
 }
-func (stack Lexer) Push(index int) Lexer {
+func (stack Lexer) push(index int) Lexer {
   c := stack[len(stack) - 1]
   return append(stack,
       newFrame(bufio.NewReader(strings.NewReader(c.text)), index))
 }
-func (stack Lexer) Pop() Lexer {
+func (stack Lexer) pop() Lexer {
   return stack[:len(stack) - 1]
 }
 func (stack Lexer) Text() string {
@@ -771,22 +772,17 @@ func (stack Lexer) Text() string {
   return c.text
 }
 `)
-
+  if !*standalone { writeLex(out, rules) }
   m := 0
   const funmac = "NN_FUN"
-  const lexmac = "NN_LEX"
   for m < len(buf) {
     m++;
-    if funmac[:m] != string(buf[:m]) && lexmac[:m] != string(buf[:m]) {
+    if funmac[:m] != string(buf[:m]) {
       out.WriteString(string(buf[:m]))
       buf = buf[m:]
       m = 0
     } else if funmac == string(buf[:m]) {
       writeNNFun(out, rules)
-      buf = buf[m:]
-      m = 0
-    } else if lexmac == string(buf[:m]) {
-      writeNNLex(out, rules)
       buf = buf[m:]
       m = 0
     }
@@ -796,6 +792,8 @@ func (stack Lexer) Text() string {
 }
 
 func main() {
+  standalone = flag.Bool("s", false,
+"generate standalone code; no Lex() method will be generated")
   flag.Parse()
   if 0 == flag.NArg() {
     process(os.Stdout, os.Stdin)

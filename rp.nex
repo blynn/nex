@@ -4,7 +4,6 @@
 //
 package main
 import "strconv"
-NN_LEX
 func main() {
   yyParse(NewLexer(os.Stdin))
 }
