@@ -71,18 +71,18 @@ func gen(out io.Writer, x *rule) {
   // We cannot have our alphabet be all Unicode characters. Instead,
   // we compute an alphabet for each regex:
   //
-  //   1. Singles: we add single characters used in the regex: any character
-  //   not in a range. These are held in `alph`.
+  //   1. Singles: we add single runes used in the regex: any rune not in a
+  //   range. These are held in `sing`.
   //   2. Ranges: entire ranges become elements of the alphabet. If ranges in
   //   the same expression overlap, we break them up into non-overlapping
   //   ranges. The generated code checks singles before ranges, so there's no
   //   need to break up a range if it contains a single. These are maintained
   //   in sorted order in `lim`.
-  //   3. Wild: we add an element representing all other characters.
+  //   3. Wild: we add an element representing all other runes.
   //
-  // e.g. the alphabet of /[0-9]*[Ee][2-5]*/ is alph: { E, e },
+  // e.g. the alphabet of /[0-9]*[Ee][2-5]*/ is sing: { E, e },
   // lim: { [0-1], [2-5], [6-9] } and the wild element.
-  alph := make(map[int]bool)
+  sing := make(map[int]bool)
   lim := make([]int, 0, 8)
   var insertLimits func(l, r int)
   // Insert a new range [l-r] into `lim`, breaking it up if it overlaps, and
@@ -152,7 +152,7 @@ func gen(out io.Writer, x *rule) {
     res := newEdge(u, v)
     res.kind = 0
     res.r = r
-    alph[r] = true
+    sing[r] = true
     return res
   }
   newNilEdge := func(u, v *node) *edge {
@@ -209,12 +209,12 @@ func gen(out io.Writer, x *rule) {
 	    left = c
 	  } else {
 	    e.lim = append(e.lim, c, c)
-	    alph[c] = true
+	    sing[c] = true
 	  }
 	case left <= c: // Upper limit.
 	  e.lim = append(e.lim, left, c)
 	  if left == c {
-	    alph[c] = true
+	    sing[c] = true
 	  } else {
 	    insertLimits(left, c)
 	  }
@@ -437,7 +437,7 @@ func gen(out io.Writer, x *rule) {
     v := todo[len(todo)-1]
     todo = todo[0:len(todo)-1]
     // Singles.
-    for r,_ := range alph {
+    for r,_ := range sing {
       states := make([]bool, n)
       for _,i := range v.set {
 	for _,e := range short[i].e {
@@ -571,11 +571,16 @@ func process(output io.Writer, input io.Reader) {
   readCode := func() string {
     if '{' != r { panic("expected {") }
     buf = buf[:0]
+    nesting := 1
     for {
       buf = append(buf, r)
       read()
       if done { panic("unmatched {") }
-      if '}' == r { break }
+      if '{' == r { nesting++ }
+      if '}' == r {
+	nesting--
+	if 0 == nesting { break }
+      }
     }
     buf = append(buf, r)
     return string(buf)
@@ -772,7 +777,12 @@ func (stack Lexer) Text() string {
   return c.text
 }
 `)
-  if !*standalone { writeLex(out, rules) }
+  if !*standalone {
+    writeLex(out, rules)
+    out.WriteString(string(buf))
+    out.Flush()
+    return
+  }
   m := 0
   const funmac = "NN_FUN"
   for m < len(buf) {
@@ -793,7 +803,7 @@ func (stack Lexer) Text() string {
 
 func main() {
   standalone = flag.Bool("s", false,
-"generate standalone code; no Lex() method will be generated")
+`standalone code; no Lex() method, NN_FUN macro substitution`)
   flag.Parse()
   if 0 == flag.NArg() {
     process(os.Stdout, os.Stdin)

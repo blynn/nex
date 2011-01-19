@@ -1,7 +1,7 @@
 /[0-9]+/          { println("An integer:", txt()) }
 /[0-9]+\.[0-9]*/  { println("A float:", txt()) }
 /if|then|begin|end|procedure|function/
-                  { println( "A keyword:", txt()) }
+                  { println("A keyword:", txt()) }
 /[a-z][a-z0-9]*/  { println("An identifier:", txt()) }
 /\+|-|\*|\//      { println("An operator:", txt()) }
 /[ \t\n]+/        { /* eat up whitespace */ }
