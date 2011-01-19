@@ -516,13 +516,14 @@ func writeNNLex(out *bufio.Writer, rules []*rule) {
   out.WriteString(`func (yylex Lexer) Error(e string) {
   panic(e)
 }
-func (yylex Lexer) Lex(lval *yySymType) int {
-  switch yylex.NextAction() {`)
+func (yylex Lexer) Lex(lval *YYSymType) int {
+  for !yylex.IsDone() {
+    switch yylex.NextAction() {`)
   for _, x := range rules {
-    fmt.Fprintf(out, "\n  case %d:  //%s/\n", x.id, string(x.regex))
+    fmt.Fprintf(out, "\n    case %d:  //%s/\n", x.id, string(x.regex))
     out.WriteString(x.code)
   }
-  out.WriteString("  }\n}")
+  out.WriteString("    }\n  }\n  return 0\n}")
 }
 func writeNNFun(out *bufio.Writer, rules []*rule) {
   out.WriteString(`func(yylex Lexer) {
@@ -648,7 +649,6 @@ func process(output io.Writer, input io.Reader) {
     buf = append(buf, r)
     read()
   }
-  // TODO: Use go/parser to replace NN_FUN and NN_LEX with generated code.
   fs := token.NewFileSet()
   t,err := parser.ParseFile(fs, "", string(buf), parser.ImportsOnly)
   if err != nil { panic(err.String()) }
@@ -818,7 +818,7 @@ func main() {
     println("nex:", er.String())
     os.Exit(1)
   }
-  outf,er := os.Open(name + ".go", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+  outf,er := os.Open(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
   if outf == nil {
     println("nex:", er.String())
     os.Exit(1)
