@@ -11,7 +11,7 @@ See ``http://doc.cat-v.org/bell_labs/structural_regexps/se.pdf[Structural
 Regular Expressions]'' by Rob Pike. I wrote this code to get acquainted with Go
 and also to explore some of the ideas in the paper. Also, I've always been
 meaning to implement algorithms I learned from a compilers course I took many
-years ago! Back then, we never needed to code them; merely understanding the
+years ago. Back then, we never needed to code them; merely understanding the
 theory was enough to pass the exam.
 
 Go has a less general http://golang.org/pkg/scanner/[scanner package],
@@ -58,8 +58,8 @@ compilation and execution of a generated scanner:
 
 generates the Go code in a temporary directory, then compiles and runs it.
 
-Text substitution is primitive, but I was unable to think of another way to
-achieve an Awk-esque feel. Purists unable to tolerate the `NN_FUN` macro will
+The `NN_FUN` macro is primitive, but I was unable to think of another way to
+achieve an Awk-esque feel. Purists unable to tolerate text substitution will
 need more code:
 
 ------------------------------------------
@@ -195,9 +195,7 @@ program is bearable:
 /[^\n]*\n/ < { isrobot = false; isrob = false }
   /robot/    { isrobot = true }
   /rob/      { isrob = true }
-  /./{}
 >            { if isrob && !isrobot { fmt.print(lex.Text()) } }
-/./{}
 //
 package main
 import "fmt"
@@ -266,7 +264,6 @@ something like "one-hundred and fifty-three") into digits.
   // The Eastern Arabic numerals are ٠١٢٣٤٥٦٧٨٩.
   fmt.Print([]int(txt())[0] - int('٠'))
 }
-/./{}
 //
 package main
 import "fmt"
