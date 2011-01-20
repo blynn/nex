@@ -1,0 +1,388 @@
+= Nex =
+
+Nex is a lexer similar to Lex/Flex that:
+
+- generates Go code instead of C code
+- integrates with goyacc instead of YACC/Bison
+- supports UTF-8
+- supports nested _structural regular expressions_.
+
+See ``http://doc.cat-v.org/bell_labs/structural_regexps/se.pdf[Structural
+Regular Expressions]'' by Rob Pike. I wrote this code to get acquainted with Go
+and also to explore some of the ideas in the paper. Also, I've always been
+meaning to implement algorithms I learned from a compilers course I took many
+years ago! Back then, we never needed to code them; merely understanding the
+theory was enough to pass the exam.
+
+Go has a less general http://golang.org/pkg/scanner/[scanner package],
+but it is especially suited for tokenizing Go code.
+
+The source is in a Git repository:
+
+  $ git clone git://github.com/blynn/nex.git
+
+== Example ==
+
+http://flex.sourceforge.net/manual/Simple-Examples.html[One simple example in
+the Flex manual] is a scanner that counts characters and lines. The program is
+similar in Nex:
+
+------------------------------------------
+/\n/{ nLines++; nChars++ }
+/./{ nChars++ }
+//
+package main
+import "fmt"
+func main() {
+  var nLines, nChars int
+  NN_FUN(NewLexer(os.Stdin))
+  fmt.Printf("%d %d\n", nLines, nChars)
+}
+------------------------------------------
+
+The syntax (for now!) resembles Awk more than Flex:
+each regex must be delimited. An empty regex terminates the rules section
+and signifies the presence of user code, which is printed on standard output
+with `NN_FUN` replaced by the generated scanner.
+
+=== Running nex ===
+
+Name the above file `lc.nex`. Then running:
+
+ $ nex -s < lc.nex
+
+prints Go source to the described scanner. The `nng` script automates the
+compilation and execution of a generated scanner:
+
+ $ nng lc.nex < /usr/share/dict/words
+
+generates the Go code in a temporary directory, then compiles and runs it.
+
+Text substitution is primitive, but I was unable to think of another way to
+achieve an Awk-esque feel. Purists unable to tolerate the `NN_FUN` macro will
+need more code:
+
+------------------------------------------
+/\n/{ lval.l++; lval.c++ }
+/./{ lval.c++ }
+//
+package main
+import "fmt"
+type yySymType struct { l, c int }
+func main() {
+  v := new(yySymType)
+  NewLexer(os.Stdin).Lex(v)
+  fmt.Printf("%d %d\n", v.l, v.c)
+}
+------------------------------------------
+
+and must run `nex` without the `-s` option.
+
+We could avoid defining a struct by using globals instead, but even then we
+need a throwaway defnition of yySymType.
+
+The generated code already imports packages such as `os`, explaining why we
+can use `os.Stdin` without an import statement.
+
+== Toy Pascal ==
+
+The Flex manual also exhibits a ``http://flex.sourceforge.net/manual/Simple-Examples.html[scanner for a toy Pascal-like language]'',
+though last I checked, its comment regex was a little buggy. Here is a
+modified Nex version, without string-to-number conversions:
+
+------------------------------------------
+/[0-9]+/          { println("An integer:", txt()) }
+/[0-9]+\.[0-9]*/  { println("A float:", txt()) }
+/if|then|begin|end|procedure|function/
+                  { println( "A keyword:", txt()) }
+/[a-z][a-z0-9]*/  { println("An identifier:", txt()) }
+/\+|-|\*|\//      { println("An operator:", txt()) }
+/[ \t\n]+/        { /* eat up whitespace */ }
+/./               { println("Unrecognized character:", txt()) }
+/{[^\{\}\n]*}/    { /* eat up one-line comments */ }
+//
+package main
+func main() {
+  lex := NewLexer(os.Stdin)
+  txt := func() string { return lex.Text() }
+  NN_FUN(lex)
+}
+------------------------------------------
+
+Enough simple examples! Let us see what nesting can do.
+
+== Peter into silicon ==
+
+In ``Structural Regular Expressions'', Pike imagines a newline-agnostic Awk
+that operates on matched text, rather than on the whole line containing a
+match, and writes code converting an input array of characters into
+descriptions of rectangles. For example, given an input such as:
+
+------------------------------------------
+    #######
+   #########
+  ####  #####
+ ####    ####   #
+ ####      #####
+####        ###
+########   #####
+#### #########
+#### #  # ####
+## #  ###   ##
+###    #  ###
+###    ##
+ ##   #
+  #   ####
+  # #
+##   #   ##
+------------------------------------------
+
+we wish to produce something like:
+
+------------------------------------------
+rect 5 12 1 2
+rect 4 13 2 3
+rect 3 7 3 4
+rect 9 14 3 4
+...
+rect 10 12 16 17
+------------------------------------------
+
+With Nex, we don't have to imagine: such programs are real. Below are practical
+Nex programs that strongly resemble their theoretical counterparts.
+The one-character-at-a-time variant:
+
+------------------------------------------
+/ /{ x++ }
+/#/{ println("rect", x, x+1, y, y+1); x++ }
+/\n/{ x=1; y++ }
+//
+package main
+func main() {
+  x := 1
+  y := 1
+  NN_FUN(NewLexer(os.Stdin))
+}
+------------------------------------------
+
+The one-run-at-a-time variant:
+
+------------------------------------------
+/ +/{ x+=len(txt()) }
+/#+/{ println("rect", x, x+len(txt()), y, y+1); x+=len(txt()) }
+/\n/{ x=1; y++ }
+//
+package main
+func main() {
+  x := 1
+  y := 1
+  lex := NewLexer(os.Stdin)
+  txt := func() string { return lex.Text() }
+  NN_FUN(lex)
+}
+------------------------------------------
+
+The programs are more verbose than Awk because Go is the backend.
+
+== Rob but not robot ==
+
+Pike then demonstrates how nesting structural expressions lead to a few
+simple text editor commands that print all lines containing "rob" but not
+"robot". Though Nex fails to separate looping from matching, a corresponding
+program is bearable:
+
+------------------------------------------
+/[^\n]*\n/ < { isrobot = false; isrob = false }
+  /robot/    { isrobot = true }
+  /rob/      { isrob = true }
+  /./{}
+>            { if isrob && !isrobot { fmt.print(lex.Text()) } }
+/./{}
+//
+package main
+import "fmt"
+func main() {
+  var isrobot, isrob bool
+  lex := NewLexer(os.Stdin)
+  NN_FUN(lex)
+}
+------------------------------------------
+
+The "<" and ">" delimit nested expressions, and work as follows.
+On reading a line, we find it matches the first regex, so we execute the code
+immediately following the opening "<".
+
+Then it's as if we run Nex again, except we focus only on the patterns and
+actions up to the closing ">", with the matched line as the entire input. Thus
+we look for occurrences of "rob" and "robot" in just the matched line and set
+flags accordingly.
+
+After the line ends, we execute the code following the closing ">" and return
+to our original state, scanning for more lines.
+
+== Word count ==
+
+We can simultaneously count lines, words, and characters with Nex thanks to
+nesting:
+------------------------------------------
+/[^\n]*\n/ < {}
+  /[^ \t\r\n]*/ < {}
+    /./  { nChars++ }
+  >      { nWords++ }
+  /./    { nChars++ }
+>        { nLines++ }
+//
+package main
+import "fmt"
+func main() {
+  var nLines, nWords, nChars int
+  NN_FUN(NewLexer(os.Stdin))
+  fmt.Printf("%d %d %d\n", nLines, nWords, nChars)
+}
+------------------------------------------
+
+The first regex matches entire lines: each line is passed to the first level
+of nested regexes. Within this level, the first regex matches words in the
+line: each word is passed to the second level of nested regexes. Within
+the second level, a regex causes every character of the word to be counted.
+
+Lastly, we also count whitespace characters, a task performed by the second
+regex of the first level of nested regexes. We could remove this statement
+to count only non-whitespace characters.
+
+== UTF-8 ==
+
+The following Nex program converts Eastern Arabic numerals to the digits used
+in the Western world, and also Chinese phrases for numbers (the analog of
+something like "one-hundred and fifty-three") into digits.
+
+------------------------------------------
+/[零一二三四五六七八九十百千]+/ { fmt.Print(zhToInt(txt())) }
+/[٠-٩]/ {
+  // The above character class might show up right-to-left in a browser.
+  // The equivalent of 0 should be on the left, and the equivalent of 9 should
+  // be on the right.
+  //
+  // The Eastern Arabic numerals are ٠١٢٣٤٥٦٧٨٩.
+  fmt.Print([]int(txt())[0] - int('٠'))
+}
+/./{}
+//
+package main
+import "fmt"
+func zhToInt(s string) int {
+  n := 0
+  prev := 0
+  f := func(m int) {
+    if 0 == prev { prev = 1 }
+    n += m * prev
+    prev = 0
+  }
+  for _, c := range s {
+    for m, v := range []int("一二三四五六七八九") {
+      if v == c {
+	prev = m+1
+	goto continue2
+      }
+    }
+    switch c {
+    case '零':
+    case '十': f(10)
+    case '百': f(100)
+    case '千': f(1000)
+    }
+continue2:
+  }
+  n += prev
+  return n
+}
+func main() {
+  lex := NewLexer(os.Stdin)
+  txt := func() string { return lex.Text() }
+  NN_FUN(lex)
+}
+------------------------------------------
+
+== nex and goyacc ==
+
+The parser generated by goyacc exports so little that it's easiest to keep
+the lexer and the parser in the same package.
+
+Here's a goyacc file based on the
+http://dinosaur.compilertools.net/bison/bison_5.html[reverse-Polish-notation
+calculator example from the Bison manual]:
+
+------------------------------------------
+%{
+package main
+import "fmt"
+%}
+
+%union { n int }
+
+%token NUM
+%%
+input:    /* empty */
+       | input line
+;
+
+line:     '\n'
+       | exp '\n'      { fmt.Println($1.n); }
+;
+
+exp:     NUM           { $$.n = $1.n;        }
+       | exp exp '+'   { $$.n = $1.n + $2.n; }
+       | exp exp '-'   { $$.n = $1.n - $2.n; }
+       | exp exp '*'   { $$.n = $1.n * $2.n; }
+       | exp exp '/'   { $$.n = $1.n / $2.n; }
+	/* Unary minus    */
+       | exp 'n'       { $$.n = -$1.n;       }
+;
+%%
+------------------------------------------
+
+Unlike Bison, we must import `fmt` even if we don't use it, since code
+generated by goyacc needs it. Also, the `%union` is mandatory; it generates
+`yySymType`.
+
+Call the above `rp.y`. Then a suitable lexer, say `rp.nex`, might be:
+
+------------------------------------------
+/[ \t]/  { /* Skip blanks and tabs. */ }
+/[0-9]*/ { lval.n,_ = strconv.Atoi(yylex.Text()); return NUM }
+/./ { return int(yylex.Text()[0]) }
+//
+package main
+import "strconv"
+func main() {
+  yyParse(NewLexer(os.Stdin))
+}
+------------------------------------------
+
+Assuming you're using 6g and friends, compile the two with:
+
+ $ nex rp.nex && goyacc rp.y && 6g rp.nn.go y.go && 6l rp.nn.6
+
+For brevity we're working in the `main` package. In a larger project one
+might want to export a function that calls `yyParse()`. This is fine,
+provided the parser and the lexer are both in the same package.
+
+However, this ties together parsers and lexers. We cannot use multiple parsers
+with the same lexer, nor vice versa. Though irrelevant for typical applications,
+this is somewhat dissatisfying because the limitation is artificial.
+
+One workaround is to search and replace the first letters of `yyParse`
+and `yySymType` with uppercase letters. Perhaps there ought to be a goyacc
+command-line option to arrange this.
+
+== TODO ==
+
+^ and $.
+
+Quoted braces in actions.
+
+\{DIGIT}.
+
+Start conditions.
+
+Maintain a scanner.Position.
