@@ -825,12 +825,12 @@ func main() {
   n := strings.LastIndex(basename, ".")
   if n >= 0 { basename = basename[:n] }
   name := basename + ".nn.go"
-  f,er := os.Open(flag.Arg(0), os.O_RDONLY, 0)
+  f,er := os.Open(flag.Arg(0))
   if f == nil {
     println("nex:", er.String())
     os.Exit(1)
   }
-  outf,er := os.Open(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+  outf,er := os.Create(name)
   if outf == nil {
     println("nex:", er.String())
     os.Exit(1)
