@@ -833,14 +833,14 @@ func (stack Lexer) nextAction() int {
       r,_,er := c.in.ReadRune()
       switch er {
       case nil: c.buf = append(c.buf, r)
-      case os.EOF:
+      case io.EOF:
 	c.atEOF = true
 	if c.n > 0 {
 	  c.text = string(c.buf)
 	  return getAction(c)
 	}
 	return c.fam.endcase
-      default: panic(er.String())
+      default: panic(er.Error())
       }
     }
     jammed := true
@@ -932,12 +932,12 @@ func main() {
 	name := basename + ".nn.go"
 	f, er := os.Open(flag.Arg(0))
 	if f == nil {
-		println("nex:", er.String())
+		println("nex:", er.Error())
 		os.Exit(1)
 	}
 	outf, er := os.Create(name)
 	if outf == nil {
-		println("nex:", er.String())
+		println("nex:", er.Error())
 		os.Exit(1)
 	}
 	process(outf, f)
