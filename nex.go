@@ -16,7 +16,7 @@ import (
 )
 
 type rule struct {
-	regex             []int
+	regex             []rune
 	code              string
 	id, family, index int
 }
@@ -36,7 +36,7 @@ var (
 	ErrBadBackslash        = Error("illegal backslash escape")
 )
 
-func ispunct(c int) bool {
+func ispunct(c rune) bool {
 	for _, r := range "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~" {
 		if c == r {
 			return true
@@ -45,13 +45,13 @@ func ispunct(c int) bool {
 	return false
 }
 
-var escapes = []int("abfnrtv")
-var escaped = []int("\a\b\f\n\r\t\v")
+var escapes = []rune("abfnrtv")
+var escaped = []rune("\a\b\f\n\r\t\v")
 
-func escape(c int) int {
+func escape(c rune) rune {
 	for i, b := range escapes {
-		if int(b) == c {
-			return i
+		if b == c {
+			return escaped[i]
 		}
 	}
 	return -1
@@ -64,10 +64,10 @@ type edge struct {
 	// 0 = empty edge
 	// -1 = wild edge (".")
 	kind   int
-	r      int   // Rune; for rune edges.
-	lim    []int // Pairs of limits for character class edges.
-	negate bool  // True if the character class is negated.
-	dst    *node // Destination node.
+	r      rune   // Rune; for rune edges.
+	lim    []rune // Pairs of limits for character class edges.
+	negate bool   // True if the character class is negated.
+	dst    *node  // Destination node.
 }
 type node struct {
 	e      []*edge // Slice of outedges.
@@ -76,7 +76,7 @@ type node struct {
 	set    []int   // The NFA nodes represented by a DFA node.
 }
 
-func inClass(r int, lim []int) bool {
+func inClass(r rune, lim []rune) bool {
 	for i := 0; i < len(lim); i += 2 {
 		if lim[i] <= r && r <= lim[i+1] {
 			return true
@@ -106,13 +106,13 @@ func gen(out io.Writer, x *rule) {
 	//
 	// e.g. the alphabet of /[0-9]*[Ee][2-5]*/ is sing: { E, e },
 	// lim: { [0-1], [2-5], [6-9] } and the wild element.
-	sing := make(map[int]bool)
-	lim := make([]int, 0, 8)
-	var insertLimits func(l, r int)
+	sing := make(map[rune]bool)
+	lim := make([]rune, 0, 8)
+	var insertLimits func(l, r rune)
 	// Insert a new range [l-r] into `lim`, breaking it up if it overlaps, and
 	// discarding it if it coincides with an existing range. We keep `lim`
 	// sorted.
-	insertLimits = func(l, r int) {
+	insertLimits = func(l, r rune) {
 		var i int
 		for i = 0; i < len(lim); i += 2 {
 			if l <= lim[i+1] {
@@ -176,7 +176,7 @@ func gen(out io.Writer, x *rule) {
 		res.kind = 1
 		return res
 	}
-	newRuneEdge := func(u, v *node, r int) *edge {
+	newRuneEdge := func(u, v *node, r rune) *edge {
 		res := newEdge(u, v)
 		res.kind = 0
 		res.r = r
@@ -191,11 +191,11 @@ func gen(out io.Writer, x *rule) {
 	newClassEdge := func(u, v *node) *edge {
 		res := newEdge(u, v)
 		res.kind = 2
-		res.lim = make([]int, 0, 2)
+		res.lim = make([]rune, 0, 2)
 		return res
 	}
 	nlpar := 0
-	maybeEscape := func() int {
+	maybeEscape := func() rune {
 		c := s[pos]
 		if '\\' == c {
 			pos++
@@ -206,7 +206,7 @@ func gen(out io.Writer, x *rule) {
 			switch {
 			case ispunct(c):
 			case escape(c) >= 0:
-				c = escaped[escape(s[pos])]
+				c = escape(s[pos])
 			default:
 				panic(ErrBadBackslash)
 			}
@@ -221,10 +221,11 @@ func gen(out io.Writer, x *rule) {
 			e.negate = true
 			pos++
 		}
-		left := -1
+		isLowerLimit := true
+		var left rune
 		for {
 			if len(s) == pos || s[pos] == ']' {
-				if left >= 0 {
+				if !isLowerLimit {
 					panic(ErrBadRange)
 				}
 				return
@@ -239,10 +240,11 @@ func gen(out io.Writer, x *rule) {
 					panic(ErrBadRange)
 				}
 				switch {
-				case left < 0: // Lower limit.
+				case isLowerLimit: // Lower limit.
 					if '-' == s[pos] {
 						pos++
 						left = c
+						isLowerLimit = false
 					} else {
 						e.lim = append(e.lim, c, c)
 						sing[c] = true
@@ -254,7 +256,7 @@ func gen(out io.Writer, x *rule) {
 					} else {
 						insertLimits(left, c)
 					}
-					left = -1
+					isLowerLimit = true
 				default:
 					panic(ErrBadRange)
 				}
@@ -540,7 +542,7 @@ func gen(out io.Writer, x *rule) {
 	n = dfacount
 	// DFA -> Go
 	// TODO: Literal arrays instead of a series of assignments.
-	fmt.Fprintf(out, "{\nvar acc [%d]bool\nvar fun [%d]func(int) int\n", n, n)
+	fmt.Fprintf(out, "{\nvar acc [%d]bool\nvar fun [%d]func(rune) int\n", n, n)
 	for _, v := range tab {
 		if -1 == v.n {
 			continue
@@ -548,7 +550,7 @@ func gen(out io.Writer, x *rule) {
 		if v.accept {
 			fmt.Fprintf(out, "acc[%d] = true\n", v.n)
 		}
-		fmt.Fprintf(out, "fun[%d] = func(r int) int {\n", v.n)
+		fmt.Fprintf(out, "fun[%d] = func(r rune) int {\n", v.n)
 		fmt.Fprintf(out, "  switch(r) {\n")
 		for _, e := range v.e {
 			m := e.dst.n
@@ -604,9 +606,9 @@ func writeNNFun(out *bufio.Writer, rules []*rule) {
 func process(output io.Writer, input io.Reader) {
 	in := bufio.NewReader(input)
 	out := bufio.NewWriter(output)
-	var r int
+	var r rune
 	done := false
-	regex := make([]int, 0, 8)
+	regex := make([]rune, 0, 8)
 	read := func() {
 		var er error
 		r, _, er = in.ReadRune()
@@ -640,7 +642,7 @@ func process(output io.Writer, input io.Reader) {
 		id++
 		return x
 	}
-	buf := make([]int, 0, 8)
+	buf := make([]rune, 0, 8)
 	readCode := func() string {
 		if '{' != r {
 			panic("expected {")
@@ -718,7 +720,7 @@ func process(output io.Writer, input io.Reader) {
 			}
 			x := newRule(family, rulen)
 			rulen++
-			x.regex = make([]int, len(regex))
+			x.regex = make([]rune, len(regex))
 			copy(x.regex, regex)
 			nested := false
 			if '<' == r {
@@ -760,7 +762,14 @@ func process(output io.Writer, input io.Reader) {
 		panic(err.Error())
 	}
 	printer.Fprint(out, fs, t)
-	for m := (<-fs.Files()).LineCount(); m > 1; m-- {
+
+	var file *token.File
+	fs.Iterate(func(f *token.File) bool {
+		file = f
+		return true
+	})
+
+	for m := file.LineCount(); m > 1; m-- {
 		i := 0
 		for '\n' != buf[i] {
 			i++
@@ -768,10 +777,10 @@ func process(output io.Writer, input io.Reader) {
 		buf = buf[i+1:]
 	}
 
-	fmt.Fprintf(out, `import ("bufio";"io";"os";"strings")
+	fmt.Fprintf(out, `import ("bufio";"io";"strings")
 type dfa struct {
   acc []bool
-  f []func(int) int
+  f []func(rune) int
   id int
 }
 type family struct {
@@ -801,7 +810,7 @@ func getAction(c *frame) int {
 type frame struct {
   atEOF bool
   action, match, matchn, n int
-  buf []int
+  buf []rune
   text string
   in *bufio.Reader
   state []int
@@ -809,7 +818,7 @@ type frame struct {
 }
 func newFrame(in *bufio.Reader, index int) *frame {
   f := new(frame)
-  f.buf = make([]int, 0, 128)
+  f.buf = make([]rune, 0, 128)
   f.in = in
   f.match = -1
   f.fam = a[index]
