@@ -37,7 +37,7 @@ similar in Nex:
 /./{ nChars++ }
 //
 package main
-import "fmt"
+import ("fmt";"os")
 func main() {
   var nLines, nChars int
   NN_FUN(NewLexer(os.Stdin))
@@ -72,7 +72,7 @@ need more code:
 /./{ lval.c++ }
 //
 package main
-import "fmt"
+import ("fmt";"os")
 type yySymType struct { l, c int }
 func main() {
   v := new(yySymType)
