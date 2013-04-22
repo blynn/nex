@@ -577,11 +577,15 @@ func gen(out io.Writer, x *rule) {
 }
 
 var standalone *bool
+var customError *bool
 
 func writeLex(out *bufio.Writer, rules []*rule) {
-	out.WriteString(`func (yylex Lexer) Error(e string) {
+	if !*customError {
+		out.WriteString(`func (yylex Lexer) Error(e string) {
   panic(e)
-}
+}`)
+	}
+	out.WriteString(`
 func (yylex Lexer) Lex(lval *yySymType) int {
   for !yylex.isDone() {
     switch yylex.nextAction() {
@@ -920,6 +924,8 @@ func (stack Lexer) Text() string {
 func main() {
 	standalone = flag.Bool("s", false,
 		`standalone code; no Lex() method, NN_FUN macro substitution`)
+	customError = flag.Bool("e", false,
+		`custom error func; no Error() method`)
 	flag.Parse()
 	if 0 == flag.NArg() {
 		process(os.Stdout, os.Stdin)
