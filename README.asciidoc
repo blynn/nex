@@ -45,10 +45,10 @@ func main() {
 }
 ------------------------------------------
 
-The syntax (for now!) resembles Awk more than Flex:
-each regex must be delimited. An empty regex terminates the rules section
-and signifies the presence of user code, which is printed on standard output
-with `NN_FUN` replaced by the generated scanner.
+The syntax resembles Awk more than Flex: each regex must be delimited. An empty
+regex terminates the rules section and signifies the presence of user code,
+which is printed on standard output with `NN_FUN` replaced by the generated
+scanner.
 
 === Building nex ===
 
@@ -58,16 +58,22 @@ Just run:
 
 === Running nex ===
 
-Name the above example `lc.nex`. Then running:
+Name the above example `lc.nex`. Then compile and run it by typing:
 
- $ nex -s < lc.nex
+ $ nex -r -s lc.nex
 
-prints Go source to the described scanner. The `nng` script automates the
-compilation and execution of a generated scanner:
+The program runs on standard input and output. For example:
 
- $ nng lc.nex < /usr/share/dict/words
+ $ nex -r -s lc.nex < /usr/share/dict/words
+ 99171 938587
 
-generates the Go code in a temporary directory, then compiles and runs it.
+To generate Go code for a scanner without compiling and running it, type:
+
+ $ nex -s < lc.nex  # Prints code on standard output.
+
+or:
+
+ $ nex -s lc.nex  # Writes code to lc.nn.go
 
 The `NN_FUN` macro is primitive, but I was unable to think of another way to
 achieve an Awk-esque feel. Purists unable to tolerate text substitution will
@@ -87,13 +93,12 @@ func main() {
 }
 ------------------------------------------
 
-and must run `nex` without the `-s` option.
+and must run `nex` without the `-s` option:
+
+ $ nex lc.nex
 
 We could avoid defining a struct by using globals instead, but even then we
 need a throwaway definition of yySymType.
-
-The generated code already imports packages such as `os`, explaining why we
-can use `os.Stdin` without an import statement.
 
 == Toy Pascal ==
 
@@ -113,6 +118,7 @@ modified Nex version, without string-to-number conversions:
 /{[^\{\}\n]*}/    { /* eat up one-line comments */ }
 //
 package main
+import "os"
 func main() {
   lex := NewLexer(os.Stdin)
   txt := func() string { return lex.Text() }
@@ -169,9 +175,9 @@ The one-character-at-a-time variant:
 /\n/{ x=1; y++ }
 //
 package main
+import "os"
 func main() {
-  x := 1
-  y := 1
+  x, y := 1, 1
   NN_FUN(NewLexer(os.Stdin))
 }
 ------------------------------------------
@@ -184,9 +190,9 @@ The one-run-at-a-time variant:
 /\n/{ x=1; y++ }
 //
 package main
+import "os"
 func main() {
-  x := 1
-  y := 1
+  x, y := 1, 1
   lex := NewLexer(os.Stdin)
   txt := func() string { return lex.Text() }
   NN_FUN(lex)
@@ -208,7 +214,7 @@ fails to separate looping from matching, a corresponding program is bearable:
 >            { if isrob && !isrobot { fmt.print(lex.Text()) } }
 //
 package main
-import "fmt"
+import ("fmt";"os")
 func main() {
   var isrobot, isrob bool
   lex := NewLexer(os.Stdin)
@@ -241,7 +247,7 @@ nesting:
 >        { nLines++ }
 //
 package main
-import "fmt"
+import ("fmt";"os")
 func main() {
   var nLines, nWords, nChars int
   NN_FUN(NewLexer(os.Stdin))
@@ -276,7 +282,7 @@ something like "one-hundred and fifty-three") into digits.
 }
 //
 package main
-import "fmt"
+import ("fmt";"os")
 func zhToInt(s string) int {
   n := 0
   prev := 0
@@ -359,7 +365,7 @@ Call the above `rp.y`. Then a suitable lexer, say `rp.nex`, might be:
 /./ { return int(yylex.Text()[0]) }
 //
 package main
-import "strconv"
+import ("os";"strconv")
 func main() {
   yyParse(NewLexer(os.Stdin))
 }

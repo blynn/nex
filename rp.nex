@@ -3,7 +3,7 @@
 /./ { return int(yylex.Text()[0]) }
 //
 package main
-import "strconv"
+import ("os";"strconv")
 func main() {
   yyParse(NewLexer(os.Stdin))
 }

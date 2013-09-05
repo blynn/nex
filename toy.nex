@@ -9,6 +9,7 @@
 /{[^\{\}\n]*}/    { /* eat up one-line comments */ }
 //
 package main
+import "os"
 func main() {
   lex := NewLexer(os.Stdin)
   txt := func() string { return lex.Text() }

@@ -3,8 +3,8 @@
 /\n/{ x=1; y++ }
 //
 package main
+import "os"
 func main() {
-  x := 1
-  y := 1
+  x, y := 1, 1
   NN_FUN(NewLexer(os.Stdin))
 }

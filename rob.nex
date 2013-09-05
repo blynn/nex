@@ -4,7 +4,7 @@
 >            { if isrob && !isrobot { fmt.Print(lex.Text()) } }
 //
 package main
-import "fmt"
+import ("fmt";"os")
 func main() {
   var isrobot, isrob bool
   lex := NewLexer(os.Stdin)
