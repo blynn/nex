@@ -50,9 +50,15 @@ each regex must be delimited. An empty regex terminates the rules section
 and signifies the presence of user code, which is printed on standard output
 with `NN_FUN` replaced by the generated scanner.
 
+=== Building nex ===
+
+Just run:
+
+ $ go build nex.go
+
 === Running nex ===
 
-Name the above file `lc.nex`. Then running:
+Name the above example `lc.nex`. Then running:
 
  $ nex -s < lc.nex
 

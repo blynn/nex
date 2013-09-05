@@ -6,7 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
+	"os/exec"
 	"strings"
 )
 import (
@@ -214,15 +216,66 @@ func gen(out io.Writer, x *rule) {
 		return c
 	}
 	pcharclass := func() (start, end *node) {
-		start = newNode()
-		end = newNode()
+		start, end = newNode(), newNode()
 		e := newClassEdge(start, end)
+		// Ranges consisting of a single element are a special case:
+		singletonRange := func(c rune) {
+			// 1. The edge 'lim' field always expects endpoints in pairs,
+			// so we must give 'c' as the beginning and the end of the range.
+			e.lim = append(e.lim, c, c)
+			// 2. Instead of updating the global 'lim' interval set, we add a singleton.
+			sing[c] = true
+		}
 		if len(s) > pos && '^' == s[pos] {
 			e.negate = true
 			pos++
 		}
-		isLowerLimit := true
 		var left rune
+		leftLive := false
+		justSawDash := false
+		first := true
+		// Allow '-' at the beginning and end, and in ranges.
+		for pos < len(s) && s[pos] != ']' {
+			switch c := maybeEscape(); c {
+			case '-':
+			  if first {
+					singletonRange('-')
+					break
+				}
+				justSawDash = true
+			default:
+				if justSawDash {
+					if !leftLive || left > c {
+						panic(ErrBadRange)
+					}
+					e.lim = append(e.lim, left, c)
+					if left == c {
+						sing[c] = true
+					} else {
+						insertLimits(left, c)
+					}
+					leftLive = false
+				} else {
+					if leftLive {
+						singletonRange(left)
+					}
+					left = c
+					leftLive = true
+				}
+				justSawDash = false
+			}
+			first = false
+			pos++
+		}
+		if leftLive {
+			singletonRange(left)
+		}
+		if justSawDash {
+			singletonRange('-')
+		}
+		return
+/*
+		isLowerLimit := true
 		for {
 			if len(s) == pos || s[pos] == ']' {
 				if !isLowerLimit {
@@ -263,6 +316,7 @@ func gen(out io.Writer, x *rule) {
 			}
 		}
 		panic("unreachable")
+	*/
 	}
 	var pre func() (start, end *node)
 	pterm := func() (start, end *node) {
@@ -576,8 +630,7 @@ func gen(out io.Writer, x *rule) {
 	fmt.Fprintf(out, "}\n")
 }
 
-var standalone *bool
-var customError *bool
+var standalone, customError, autorun *bool
 
 func writeLex(out *bufio.Writer, rules []*rule) {
 	if !*customError {
@@ -921,41 +974,56 @@ func (stack Lexer) Text() string {
 	out.Flush()
 }
 
+func dieIf(cond bool, v ...interface{}) {
+  if cond {
+    fmt.Println(v...)
+    os.Exit(1)
+  }
+}
+
 func main() {
 	standalone = flag.Bool("s", false,
 		`standalone code; no Lex() method, NN_FUN macro substitution`)
 	customError = flag.Bool("e", false,
 		`custom error func; no Error() method`)
+	autorun = flag.Bool("r", false,
+		`run generated program`)
 	flag.Parse()
-	if 0 == flag.NArg() {
-		process(os.Stdout, os.Stdin)
-		return
-	}
-	if flag.NArg() > 1 {
-		println("nex: extraneous arguments after", flag.Arg(1))
-		os.Exit(1)
-	}
-	if strings.HasSuffix(flag.Arg(1), ".go") {
-		println("nex: input filename ends with .go:", flag.Arg(1))
-		os.Exit(1)
-	}
-	basename := flag.Arg(0)
-	n := strings.LastIndex(basename, ".")
-	if n >= 0 {
-		basename = basename[:n]
-	}
-	name := basename + ".nn.go"
-	f, er := os.Open(flag.Arg(0))
-	if f == nil {
-		println("nex:", er.Error())
-		os.Exit(1)
-	}
-	outf, er := os.Create(name)
-	if outf == nil {
-		println("nex:", er.Error())
-		os.Exit(1)
-	}
-	process(outf, f)
-	outf.Close()
-	f.Close()
+  infile, outfile := os.Stdin, os.Stdout
+  var err error
+	if flag.NArg() > 0 {
+    dieIf(flag.NArg() > 1, "nex: extraneous arguments after", flag.Arg(0))
+    dieIf(strings.HasSuffix(flag.Arg(0), ".go"), "nex: input filename ends with .go:", flag.Arg(0))
+    basename := flag.Arg(0)
+    n := strings.LastIndex(basename, ".")
+    if n >= 0 {
+      basename = basename[:n]
+    }
+    infile, err = os.Open(flag.Arg(0))
+    dieIf(infile == nil, "nex:", err)
+    defer infile.Close()
+    if !*autorun {
+      outfile, err = os.Create(basename + ".nn.go")
+      dieIf(outfile == nil, "nex:", err)
+      defer outfile.Close()
+    }
+  }
+  if *autorun {
+    tmpdir, err := ioutil.TempDir("", "nex")
+    dieIf(err != nil, "tempdir:", err)
+    defer func() {
+      err = os.RemoveAll(tmpdir)
+      dieIf(err != nil, "removeall %q: %s", tmpdir, err)
+    }()
+    outfile, err = os.Create(tmpdir + "/lets.go")
+    dieIf(outfile == nil, "nex:", err)
+    defer outfile.Close()
+  }
+	process(outfile, infile)
+  if *autorun {
+    c := exec.Command("go", "run", outfile.Name())
+    c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+    err = c.Run()
+    dieIf(err != nil, "go run: %s", err)
+  }
 }

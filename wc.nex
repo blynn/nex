@@ -6,7 +6,7 @@
 >        { nLines++ }
 //
 package main
-import "fmt"
+import ("fmt";"os")
 func main() {
   var nLines, nWords, nChars int
   NN_FUN(NewLexer(os.Stdin))
