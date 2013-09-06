@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 import (
@@ -62,20 +63,74 @@ func escape(c rune) rune {
 type edge struct {
 	// TODO: Make kind an enum (and use iota)
 	// 2 = rune class edge
-	// 1 = rune edge
-	// 0 = empty edge
-	// -1 = wild edge (".")
+	// 1 = wild edge (".")
+	// 0 = rune edge
+	// -1 = empty edge
 	kind   int
-	r      rune   // Rune; for rune edges.
+	r      rune   // Rune for rune edges.
 	lim    []rune // Pairs of limits for character class edges.
 	negate bool   // True if the character class is negated.
 	dst    *node  // Destination node.
 }
 type node struct {
-	e      []*edge // Slice of outedges.
+	e      []*edge // Outedges.
 	n      int     // Index number. Scoped to a family.
 	accept bool    // True if this is an accepting state.
 	set    []int   // The NFA nodes represented by a DFA node.
+}
+
+// Print a graph in DOT format given the start node.
+//
+//  $ dot -Tps input.dot -o output.ps
+func writeDotGraph(outf *os.File, start *node, id string) {
+  done := make(map[*node]bool)
+  var show func(*node)
+  show = func(u *node) {
+    if u.accept {
+      fmt.Fprintf(outf, "  %v[style=filled,color=green];\n", u.n)
+    }
+    done[u] = true
+    for _, e := range u.e {
+      // We use -1 to denote the dead end node in DFAs.
+      if e.dst.n == -1 {
+        continue;
+      }
+      label := ""
+      runeToDot := func(r rune) string {
+        if strconv.IsPrint(r) {
+          return fmt.Sprintf("%v", string(r))
+        }
+        return fmt.Sprintf("U+%X", int(r))
+      }
+      switch e.kind {
+      case 0:
+        label = fmt.Sprintf("[label=%q]", runeToDot(e.r))
+      case 1:
+        label = "[color=blue]"
+      case 2:
+        label = "[label=\"["
+        if e.negate {
+          label += "^"
+        }
+        for i := 0; i < len(e.lim); i += 2 {
+          label += runeToDot(e.lim[i])
+          if e.lim[i] != e.lim[i + 1] {
+            label += "-" + runeToDot(e.lim[i + 1])
+          }
+        }
+        label += "]\"]"
+      }
+      fmt.Fprintf(outf, "  %v -> %v%v;\n", u.n, e.dst.n, label)
+    }
+    for _, e := range u.e {
+      if !done[e.dst] {
+        show(e.dst)
+      }
+    }
+  }
+  fmt.Fprintf(outf, "digraph %v {\n  0[shape=box];\n", id)
+  show(start)
+  fmt.Fprintln(outf, "}")
 }
 
 func inClass(r rune, lim []rune) bool {
@@ -86,6 +141,9 @@ func inClass(r rune, lim []rune) bool {
 	}
 	return false
 }
+
+var dfadot, nfadot *os.File
+
 func gen(out io.Writer, x *rule) {
 	// End rule
 	if -1 == x.index {
@@ -99,11 +157,13 @@ func gen(out io.Writer, x *rule) {
 	//
 	//   1. Singles: we add single runes used in the regex: any rune not in a
 	//   range. These are held in `sing`.
+  //
 	//   2. Ranges: entire ranges become elements of the alphabet. If ranges in
 	//   the same expression overlap, we break them up into non-overlapping
 	//   ranges. The generated code checks singles before ranges, so there's no
 	//   need to break up a range if it contains a single. These are maintained
 	//   in sorted order in `lim`.
+  //
 	//   3. Wild: we add an element representing all other runes.
 	//
 	// e.g. the alphabet of /[0-9]*[Ee][2-5]*/ is sing: { E, e },
@@ -220,10 +280,10 @@ func gen(out io.Writer, x *rule) {
 		e := newClassEdge(start, end)
 		// Ranges consisting of a single element are a special case:
 		singletonRange := func(c rune) {
-			// 1. The edge 'lim' field always expects endpoints in pairs,
+			// 1. The edge-specific 'lim' field always expects endpoints in pairs,
 			// so we must give 'c' as the beginning and the end of the range.
 			e.lim = append(e.lim, c, c)
-			// 2. Instead of updating the global 'lim' interval set, we add a singleton.
+			// 2. Instead of updating the regex-wide 'lim' interval set, we add a singleton.
 			sing[c] = true
 		}
 		if len(s) > pos && '^' == s[pos] {
@@ -274,49 +334,6 @@ func gen(out io.Writer, x *rule) {
 			singletonRange('-')
 		}
 		return
-/*
-		isLowerLimit := true
-		for {
-			if len(s) == pos || s[pos] == ']' {
-				if !isLowerLimit {
-					panic(ErrBadRange)
-				}
-				return
-			}
-			switch s[pos] {
-			case '-':
-				panic(ErrBadRange)
-			default:
-				c := maybeEscape()
-				pos++
-				if len(s) == pos {
-					panic(ErrBadRange)
-				}
-				switch {
-				case isLowerLimit: // Lower limit.
-					if '-' == s[pos] {
-						pos++
-						left = c
-						isLowerLimit = false
-					} else {
-						e.lim = append(e.lim, c, c)
-						sing[c] = true
-					}
-				case left <= c: // Upper limit.
-					e.lim = append(e.lim, left, c)
-					if left == c {
-						sing[c] = true
-					} else {
-						insertLimits(left, c)
-					}
-					isLowerLimit = true
-				default:
-					panic(ErrBadRange)
-				}
-			}
-		}
-		panic("unreachable")
-	*/
 	}
 	var pre func() (start, end *node)
 	pterm := func() (start, end *node) {
@@ -455,27 +472,9 @@ func gen(out io.Writer, x *rule) {
 	}
 	n = len(short)
 
-	/*
-		  {
-		  var show func(*node)
-		  mark := make([]bool, n)
-		  show = func(u *node) {
-		    mark[u.n] = true
-		    print(u.n, ": ")
-		    for _,e := range u.e {
-		      print("(", e.kind, " ", e.r, ")")
-		      print(e.dst.n)
-		    }
-		    println()
-		    for _,e := range u.e {
-		      if !mark[e.dst.n] {
-			show(e.dst)
-		      }
-		    }
-		  }
-		  show(start)
-		  }
-	*/
+	if nfadot != nil {
+    writeDotGraph(nfadot, start, fmt.Sprintf("NFA_%v", x.id))
+  }
 
 	// NFA -> DFA
 	nilClose := func(st []bool) {
@@ -501,7 +500,7 @@ func gen(out io.Writer, x *rule) {
 	tab := make(map[string]*node)
 	buf := make([]byte, 0, 8)
 	dfacount := 0
-	{
+	{  // Construct the node of no return.
 		for i := 0; i < n; i++ {
 			buf = append(buf, '0')
 		}
@@ -546,8 +545,10 @@ func gen(out io.Writer, x *rule) {
 		return node
 	}
 	states := make([]bool, n)
-	states[0] = true
-	get(states)
+  // The DFA start state is the state representing the nil-closure of the start
+  // node in the NFA. Recall it has index 0.
+  states[0] = true
+	dfastart := get(states)
 	for len(todo) > 0 {
 		v := todo[len(todo)-1]
 		todo = todo[0 : len(todo)-1]
@@ -594,6 +595,10 @@ func gen(out io.Writer, x *rule) {
 		newWildEdge(v, get(states))
 	}
 	n = dfacount
+
+	if dfadot != nil {
+    writeDotGraph(dfadot, dfastart, fmt.Sprintf("DFA_%v", x.id))
+  }
 	// DFA -> Go
 	// TODO: Literal arrays instead of a series of assignments.
 	fmt.Fprintf(out, "{\nvar acc [%d]bool\nvar fun [%d]func(rune) int\n", n, n)
@@ -834,7 +839,7 @@ func process(output io.Writer, input io.Reader) {
 		buf = buf[i+1:]
 	}
 
-	fmt.Fprintf(out, `import ("bufio";"io";"strings")
+  out.WriteString(`import ("bufio";"io";"strings")
 type dfa struct {
   acc []bool
   f []func(rune) int
@@ -844,10 +849,10 @@ type family struct {
   a []dfa
   endcase int
 }
+` + decls +
+`var a []family
+func init() {
 `)
-	out.WriteString(decls)
-	out.WriteString("var a []family\n")
-	out.WriteString("func init() {\n")
 
 	fmt.Fprintf(out, "a = make([]family, %d)\n", familyn)
 	for _, x := range rules {
@@ -981,14 +986,41 @@ func dieIf(cond bool, v ...interface{}) {
   }
 }
 
+func dieErr(err error, s string) {
+  if err != nil {
+    fmt.Printf("%v: %v", s, err)
+    os.Exit(1)
+  }
+}
+
+
+func createFile(filename string) *os.File {
+  if filename == "" {
+    return nil
+  }
+  file, err := os.Create(filename)
+  dieErr(err, "Create")
+  return file
+}
+
 func main() {
-	standalone = flag.Bool("s", false,
-		`standalone code; no Lex() method, NN_FUN macro substitution`)
-	customError = flag.Bool("e", false,
-		`custom error func; no Error() method`)
-	autorun = flag.Bool("r", false,
-		`run generated program`)
+	standalone  = flag.Bool("s", false, `standalone code; NN_FUN macro substitution, no Lex() method`)
+	customError = flag.Bool("e", false, `custom error func; no Error() method`)
+	autorun     = flag.Bool("r", false, `run generated program`)
+	nfadotFile := flag.String("nfadot", "", `show NFA graph in DOT format`)
+	dfadotFile := flag.String("dfadot", "", `show DFA graph in DOT format`)
 	flag.Parse()
+
+  nfadot = createFile(*nfadotFile)
+  dfadot = createFile(*dfadotFile)
+  defer func() {
+    if (nfadot != nil) {
+      dieErr(nfadot.Close(), "Close")
+    }
+    if (dfadot != nil) {
+      dieErr(dfadot.Close(), "Close")
+    }
+  }()
   infile, outfile := os.Stdin, os.Stdout
   var err error
 	if flag.NArg() > 0 {
