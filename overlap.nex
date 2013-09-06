@@ -1,9 +1,0 @@
-/[a-e]+[d-h]+/ { print("0") }
-/[m-n]+[k-p]+[^k-r]+[o-p]+/ { print("1") }
-/./ { print(lex.Text()) }
-//
-package main
-func main() {
-  lex := NewLexer(os.Stdin)
-  NN_FUN(lex)
-}

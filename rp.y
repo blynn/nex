@@ -1,10 +1,11 @@
-/* nex rp.nex && goyacc rp.y && 6g rp.nn.go y.go && 6l rp.nn.6 */
 %{
 package main
 import "fmt"
 %}
 
-%union { n int }
+%union {
+  n int
+}
 
 %token NUM
 %%
