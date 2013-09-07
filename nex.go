@@ -37,12 +37,12 @@ var (
 	ErrExtraneousBackslash = Error("extraneous backslash")
 	ErrBareClosure         = Error("closure applies to nothing")
 	ErrBadBackslash        = Error("illegal backslash escape")
-  ErrExpectedLBrace      = Error("expected '{'")
-  ErrUnmatchedLBrace     = Error("unmatched '{'")
-  ErrUnexpectedEOF       = Error("unexpected EOF")
-  ErrUnexpectedNewline   = Error("unexpected newline")
-  ErrUnmatchedLAngle     = Error("unmatched '<'")
-  ErrUnmatchedRAngle     = Error("unmatched '>'")
+	ErrExpectedLBrace      = Error("expected '{'")
+	ErrUnmatchedLBrace     = Error("unmatched '{'")
+	ErrUnexpectedEOF       = Error("unexpected EOF")
+	ErrUnexpectedNewline   = Error("unexpected newline")
+	ErrUnmatchedLAngle     = Error("unmatched '<'")
+	ErrUnmatchedRAngle     = Error("unmatched '>'")
 )
 
 func ispunct(c rune) bool {
@@ -67,10 +67,10 @@ func escape(c rune) rune {
 }
 
 const (
-  kNil = iota
-  kRune
-  kClass
-  kWild
+	kNil = iota
+	kRune
+	kClass
+	kWild
 )
 
 type edge struct {
@@ -91,54 +91,54 @@ type node struct {
 //
 //  $ dot -Tps input.dot -o output.ps
 func writeDotGraph(outf *os.File, start *node, id string) {
-  done := make(map[*node]bool)
-  var show func(*node)
-  show = func(u *node) {
-    if u.accept {
-      fmt.Fprintf(outf, "  %v[style=filled,color=green];\n", u.n)
-    }
-    done[u] = true
-    for _, e := range u.e {
-      // We use -1 to denote the dead end node in DFAs.
-      if e.dst.n == -1 {
-        continue;
-      }
-      label := ""
-      runeToDot := func(r rune) string {
-        if strconv.IsPrint(r) {
-          return fmt.Sprintf("%v", string(r))
-        }
-        return fmt.Sprintf("U+%X", int(r))
-      }
-      switch e.kind {
-      case kRune:
-        label = fmt.Sprintf("[label=%q]", runeToDot(e.r))
-      case kWild:
-        label = "[color=blue]"
-      case kClass:
-        label = "[label=\"["
-        if e.negate {
-          label += "^"
-        }
-        for i := 0; i < len(e.lim); i += 2 {
-          label += runeToDot(e.lim[i])
-          if e.lim[i] != e.lim[i + 1] {
-            label += "-" + runeToDot(e.lim[i + 1])
-          }
-        }
-        label += "]\"]"
-      }
-      fmt.Fprintf(outf, "  %v -> %v%v;\n", u.n, e.dst.n, label)
-    }
-    for _, e := range u.e {
-      if !done[e.dst] {
-        show(e.dst)
-      }
-    }
-  }
-  fmt.Fprintf(outf, "digraph %v {\n  0[shape=box];\n", id)
-  show(start)
-  fmt.Fprintln(outf, "}")
+	done := make(map[*node]bool)
+	var show func(*node)
+	show = func(u *node) {
+		if u.accept {
+			fmt.Fprintf(outf, "  %v[style=filled,color=green];\n", u.n)
+		}
+		done[u] = true
+		for _, e := range u.e {
+			// We use -1 to denote the dead end node in DFAs.
+			if e.dst.n == -1 {
+				continue
+			}
+			label := ""
+			runeToDot := func(r rune) string {
+				if strconv.IsPrint(r) {
+					return fmt.Sprintf("%v", string(r))
+				}
+				return fmt.Sprintf("U+%X", int(r))
+			}
+			switch e.kind {
+			case kRune:
+				label = fmt.Sprintf("[label=%q]", runeToDot(e.r))
+			case kWild:
+				label = "[color=blue]"
+			case kClass:
+				label = "[label=\"["
+				if e.negate {
+					label += "^"
+				}
+				for i := 0; i < len(e.lim); i += 2 {
+					label += runeToDot(e.lim[i])
+					if e.lim[i] != e.lim[i+1] {
+						label += "-" + runeToDot(e.lim[i+1])
+					}
+				}
+				label += "]\"]"
+			}
+			fmt.Fprintf(outf, "  %v -> %v%v;\n", u.n, e.dst.n, label)
+		}
+		for _, e := range u.e {
+			if !done[e.dst] {
+				show(e.dst)
+			}
+		}
+	}
+	fmt.Fprintf(outf, "digraph %v {\n  0[shape=box];\n", id)
+	show(start)
+	fmt.Fprintln(outf, "}")
 }
 
 func inClass(r rune, lim []rune) bool {
@@ -165,13 +165,13 @@ func gen(out io.Writer, x *rule) {
 	//
 	//   1. Singles: we add single runes used in the regex: any rune not in a
 	//   range. These are held in `sing`.
-  //
+	//
 	//   2. Ranges: entire ranges become elements of the alphabet. If ranges in
 	//   the same expression overlap, we break them up into non-overlapping
 	//   ranges. The generated code checks singles before ranges, so there's no
 	//   need to break up a range if it contains a single. These are maintained
 	//   in sorted order in `lim`.
-  //
+	//
 	//   3. Wild: we add an element representing all other runes.
 	//
 	// e.g. the alphabet of /[0-9]*[Ee][2-5]*/ is sing: { E, e },
@@ -305,7 +305,7 @@ func gen(out io.Writer, x *rule) {
 		for pos < len(s) && s[pos] != ']' {
 			switch c := maybeEscape(); c {
 			case '-':
-			  if first {
+				if first {
 					singletonRange('-')
 					break
 				}
@@ -480,8 +480,8 @@ func gen(out io.Writer, x *rule) {
 	n = len(short)
 
 	if nfadot != nil {
-    writeDotGraph(nfadot, start, fmt.Sprintf("NFA_%v", x.id))
-  }
+		writeDotGraph(nfadot, start, fmt.Sprintf("NFA_%v", x.id))
+	}
 
 	// NFA -> DFA
 	nilClose := func(st []bool) {
@@ -507,7 +507,7 @@ func gen(out io.Writer, x *rule) {
 	tab := make(map[string]*node)
 	var buf []byte
 	dfacount := 0
-	{  // Construct the node of no return.
+	{ // Construct the node of no return.
 		for i := 0; i < n; i++ {
 			buf = append(buf, '0')
 		}
@@ -551,9 +551,9 @@ func gen(out io.Writer, x *rule) {
 		return node
 	}
 	states := make([]bool, n)
-  // The DFA start state is the state representing the nil-closure of the start
-  // node in the NFA. Recall it has index 0.
-  states[0] = true
+	// The DFA start state is the state representing the nil-closure of the start
+	// node in the NFA. Recall it has index 0.
+	states[0] = true
 	dfastart := get(states)
 	for len(todo) > 0 {
 		v := todo[len(todo)-1]
@@ -603,8 +603,8 @@ func gen(out io.Writer, x *rule) {
 	n = dfacount
 
 	if dfadot != nil {
-    writeDotGraph(dfadot, dfastart, fmt.Sprintf("DFA_%v", x.id))
-  }
+		writeDotGraph(dfadot, dfastart, fmt.Sprintf("DFA_%v", x.id))
+	}
 	// DFA -> Go
 	// TODO: Literal arrays instead of a series of assignments.
 	fmt.Fprintf(out, "{\nvar acc [%d]bool\nvar fun [%d]func(rune) int\n", n, n)
@@ -837,7 +837,7 @@ func process(output io.Writer, input io.Reader) {
 		buf = buf[i+1:]
 	}
 
-  out.WriteString(`import ("bufio";"io";"strings")
+	out.WriteString(`import ("bufio";"io";"strings")
 type dfa struct {
   acc []bool  // Accepting states.
   f []func(rune) int  // Transitions.
@@ -848,7 +848,7 @@ type family struct {
   endcase int
 }
 ` + decls +
-`var a []family
+		`var a []family
 func init() {
 `)
 
@@ -981,82 +981,82 @@ func (stack Lexer) Text() string {
 }
 
 func dieIf(cond bool, v ...interface{}) {
-  if cond {
-    fmt.Println(v...)
-    os.Exit(1)
-  }
+	if cond {
+		fmt.Println(v...)
+		os.Exit(1)
+	}
 }
 
 func dieErr(err error, s string) {
-  if err != nil {
-    fmt.Printf("%v: %v", s, err)
-    os.Exit(1)
-  }
+	if err != nil {
+		fmt.Printf("%v: %v", s, err)
+		os.Exit(1)
+	}
 }
 
 func createDotFile(filename string) *os.File {
-  if filename == "" {
-    return nil
-  }
-  dieIf(strings.HasSuffix(filename, ".nex"), "nex: DOT filename ends with .nex:", filename)
-  file, err := os.Create(filename)
-  dieErr(err, "Create")
-  return file
+	if filename == "" {
+		return nil
+	}
+	dieIf(strings.HasSuffix(filename, ".nex"), "nex: DOT filename ends with .nex:", filename)
+	file, err := os.Create(filename)
+	dieErr(err, "Create")
+	return file
 }
 
 func main() {
-	standalone  = flag.Bool("s", false, `standalone code; NN_FUN macro substitution, no Lex() method`)
+	standalone = flag.Bool("s", false, `standalone code; NN_FUN macro substitution, no Lex() method`)
 	customError = flag.Bool("e", false, `custom error func; no Error() method`)
-	autorun     = flag.Bool("r", false, `run generated program`)
+	autorun = flag.Bool("r", false, `run generated program`)
 	nfadotFile := flag.String("nfadot", "", `show NFA graph in DOT format`)
 	dfadotFile := flag.String("dfadot", "", `show DFA graph in DOT format`)
 	flag.Parse()
 
-  nfadot = createDotFile(*nfadotFile)
-  dfadot = createDotFile(*dfadotFile)
-  defer func() {
-    if (nfadot != nil) {
-      dieErr(nfadot.Close(), "Close")
-    }
-    if (dfadot != nil) {
-      dieErr(dfadot.Close(), "Close")
-    }
-  }()
-  infile, outfile := os.Stdin, os.Stdout
-  var err error
+	nfadot = createDotFile(*nfadotFile)
+	dfadot = createDotFile(*dfadotFile)
+	defer func() {
+		if nfadot != nil {
+			dieErr(nfadot.Close(), "Close")
+		}
+		if dfadot != nil {
+			dieErr(dfadot.Close(), "Close")
+		}
+	}()
+	infile, outfile := os.Stdin, os.Stdout
+	var err error
 	if flag.NArg() > 0 {
-    dieIf(flag.NArg() > 1, "nex: extraneous arguments after", flag.Arg(0))
-    dieIf(strings.HasSuffix(flag.Arg(0), ".go"), "nex: input filename ends with .go:", flag.Arg(0))
-    basename := flag.Arg(0)
-    n := strings.LastIndex(basename, ".")
-    if n >= 0 {
-      basename = basename[:n]
-    }
-    infile, err = os.Open(flag.Arg(0))
-    dieIf(infile == nil, "nex:", err)
-    defer infile.Close()
-    if !*autorun {
-      outfile, err = os.Create(basename + ".nn.go")
-      dieIf(outfile == nil, "nex:", err)
-      defer outfile.Close()
-    }
-  }
-  if *autorun {
-    tmpdir, err := ioutil.TempDir("", "nex")
-    dieIf(err != nil, "tempdir:", err)
-    defer func() {
-      err = os.RemoveAll(tmpdir)
-      dieIf(err != nil, "removeall %q: %s", tmpdir, err)
-    }()
-    outfile, err = os.Create(tmpdir + "/lets.go")
-    dieIf(outfile == nil, "nex:", err)
-    defer outfile.Close()
-  }
+		dieIf(flag.NArg() > 1, "nex: extraneous arguments after", flag.Arg(0))
+		dieIf(strings.HasSuffix(flag.Arg(0), ".go"), "nex: input filename ends with .go:", flag.Arg(0))
+		basename := flag.Arg(0)
+		n := strings.LastIndex(basename, ".")
+		if n >= 0 {
+			basename = basename[:n]
+		}
+		infile, err = os.Open(flag.Arg(0))
+		dieIf(infile == nil, "nex:", err)
+		defer infile.Close()
+		if !*autorun {
+			outfile, err = os.Create(basename + ".nn.go")
+			dieIf(outfile == nil, "nex:", err)
+			defer outfile.Close()
+		}
+	}
+	if *autorun {
+		tmpdir, err := ioutil.TempDir("", "nex")
+		dieIf(err != nil, "tempdir:", err)
+		defer func() {
+			err = os.RemoveAll(tmpdir)
+			dieIf(err != nil, "removeall %q: %s", tmpdir, err)
+		}()
+		outfile, err = os.Create(tmpdir + "/lets.go")
+		dieIf(outfile == nil, "nex:", err)
+		defer outfile.Close()
+	}
 	process(outfile, infile)
-  if *autorun {
-    c := exec.Command("go", "run", outfile.Name())
-    c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-    err = c.Run()
-    dieIf(err != nil, "go run: %s", err)
-  }
+	if *autorun {
+		c := exec.Command("go", "run", outfile.Name())
+		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+		err = c.Run()
+		dieIf(err != nil, "go run: %s", err)
+	}
 }

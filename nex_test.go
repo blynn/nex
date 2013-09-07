@@ -1,74 +1,74 @@
 package nex
 
 import (
-  "io/ioutil"
-  "os"
-  "os/exec"
-  "path/filepath"
-  "strings"
-  "testing"
+	"io/ioutil"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
 )
 
 const nexBin = "./nex"
 
 func dieErr(t *testing.T, err error, s string) {
-  if err != nil {
-    t.Fatalf("%s: %s", s, err)
-  }
+	if err != nil {
+		t.Fatalf("%s: %s", s, err)
+	}
 }
 
 // Test the reverse-Polish notation calculator rp.{nex,y}.
 func TestNexPlusYacc(t *testing.T) {
-  tmpdir, err := ioutil.TempDir("", "nex")
-  dieErr(t, err, "TempDir")
-  defer func() {
-    dieErr(t, os.RemoveAll(tmpdir), "RemoveAll")
-  }()
-  run := func(s string) {
-    v := strings.Split(s, " ")
-    err := exec.Command(v[0], v[1:]...).Run()
-    dieErr(t, err, s)
-  }
-  run("cp rp.nex rp.y " + tmpdir)
-  absNexBin, err := filepath.Abs(nexBin)
-  dieErr(t, err, "filepath.Abs")
-  wd, err := os.Getwd()
-  dieErr(t, err, "Getwd")
-  dieErr(t, os.Chdir(tmpdir), "Chdir")
-  defer func() {
-    dieErr(t, os.Chdir(wd), "Chdir")
-  }()
-  run(absNexBin + " rp.nex")
-  run("go tool yacc rp.y")
-  run("go build y.go rp.nn.go")
-  cmd := exec.Command("./y")
-  cmd.Stdin = strings.NewReader(
-`1 2 3 4 + * -
+	tmpdir, err := ioutil.TempDir("", "nex")
+	dieErr(t, err, "TempDir")
+	defer func() {
+		dieErr(t, os.RemoveAll(tmpdir), "RemoveAll")
+	}()
+	run := func(s string) {
+		v := strings.Split(s, " ")
+		err := exec.Command(v[0], v[1:]...).Run()
+		dieErr(t, err, s)
+	}
+	run("cp rp.nex rp.y " + tmpdir)
+	absNexBin, err := filepath.Abs(nexBin)
+	dieErr(t, err, "filepath.Abs")
+	wd, err := os.Getwd()
+	dieErr(t, err, "Getwd")
+	dieErr(t, os.Chdir(tmpdir), "Chdir")
+	defer func() {
+		dieErr(t, os.Chdir(wd), "Chdir")
+	}()
+	run(absNexBin + " rp.nex")
+	run("go tool yacc rp.y")
+	run("go build y.go rp.nn.go")
+	cmd := exec.Command("./y")
+	cmd.Stdin = strings.NewReader(
+		`1 2 3 4 + * -
 9 8 * 7 * 3 2 * 1 * / n
 `)
-  want := "-13\n-84\n"
-  got, err := cmd.CombinedOutput()
-  dieErr(t, err, "CombinedOutput")
-  if want != string(got) {
-    t.Fatalf("want %q, got %q", want, string(got))
-  }
+	want := "-13\n-84\n"
+	got, err := cmd.CombinedOutput()
+	dieErr(t, err, "CombinedOutput")
+	if want != string(got) {
+		t.Fatalf("want %q, got %q", want, string(got))
+	}
 }
 
 func TestNexPrograms(t *testing.T) {
-  tmpdir, err := ioutil.TempDir("", "nex")
-  dieErr(t, err, "TempDir")
-  defer func() {
-    dieErr(t, os.RemoveAll(tmpdir), "RemoveAll")
-  }()
-  tmpnex := tmpdir + "/tmp.nex"
+	tmpdir, err := ioutil.TempDir("", "nex")
+	dieErr(t, err, "TempDir")
+	defer func() {
+		dieErr(t, os.RemoveAll(tmpdir), "RemoveAll")
+	}()
+	tmpnex := tmpdir + "/tmp.nex"
 
-  for _, x := range []struct {
-    // A newline at the beginning of the 'prog' field means the test Nex program
-    // is inline. Otherwise 'prog' is a filename containing the test program.
-    prog, in, out string
-  }{
-    // Simple nested regex test.
-    {`
+	for _, x := range []struct {
+		// A newline at the beginning of the 'prog' field means the test Nex program
+		// is inline. Otherwise 'prog' is a filename containing the test program.
+		prog, in, out string
+	}{
+		// Simple nested regex test.
+		{`
 /abc/ < { print("[") }
   /a/   { print("A") }
   /b/   { print("B") }
@@ -84,8 +84,8 @@ func main() {
 }
 `, "abccbaabc", "[ABC]...[ABC]"},
 
-    // Exercise hyphens in character classes.
-    {`
+		// Exercise hyphens in character classes.
+		{`
 /[a-z-]*/ < { print("[") }
   /[^-a-df-m]/ { print("0") }
   /./       { print("1") }
@@ -100,8 +100,8 @@ func main() {
 }
 `, "-azb-ycx@d--w-e-", "[11011010].[1110101]"},
 
-    // Overlapping character classes.
-    {`
+		// Overlapping character classes.
+		{`
 /[a-e]+[d-h]+/ { print("0") }
 /[m-n]+[k-p]+[^k-r]+[o-p]+/ { print("1") }
 /./ { print(lex.Text()) }
@@ -112,13 +112,13 @@ func main() {
   lex := NewLexer(os.Stdin)
   NN_FUN(lex)
 }
-`, "abcdefghijmnopabcoq", "0ij1q" },
+`, "abcdefghijmnopabcoq", "0ij1q"},
 
-    {"lc.nex", "no newline", "0 10\n"},
-    {"lc.nex", "one two three\nfour five six\n", "2 28\n"},
+		{"lc.nex", "no newline", "0 10\n"},
+		{"lc.nex", "one two three\nfour five six\n", "2 28\n"},
 
-    {"toy.nex", "if\t\n6 * 9 ==   42  then {one-line comment } else 1.23. end",
-`A keyword: if
+		{"toy.nex", "if\t\n6 * 9 ==   42  then {one-line comment } else 1.23. end",
+			`A keyword: if
 An integer: 6
 An operator: *
 An integer: 9
@@ -132,13 +132,13 @@ Unrecognized character: .
 A keyword: end
 `},
 
-    {"wc.nex", "no newline", "0 0 0\n"},
-    {"wc.nex", "\n", "1 0 1\n"},
-    {"wc.nex", "1\na b\nA B C\n", "3 6 12\n"},
-    {"wc.nex", "one two three\nfour five six\n", "2 6 28\n"},
+		{"wc.nex", "no newline", "0 0 0\n"},
+		{"wc.nex", "\n", "1 0 1\n"},
+		{"wc.nex", "1\na b\nA B C\n", "3 6 12\n"},
+		{"wc.nex", "one two three\nfour five six\n", "2 6 28\n"},
 
-    {"rob.nex",
-`1 robot
+		{"rob.nex",
+			`1 robot
 2 robo
 3 rob
 4 rob robot
@@ -146,8 +146,8 @@ A keyword: end
 6 roboot
 `, "2 robo\n3 rob\n6 roboot\n"},
 
-    {"peter.nex",
-`    #######
+		{"peter.nex",
+			`    #######
    #########
   ####  #####
  ####    ####   #
@@ -164,7 +164,7 @@ A keyword: end
   # #
 ##   #   ##
 `,
-`rect 5 6 1 2
+			`rect 5 6 1 2
 rect 6 7 1 2
 rect 7 8 1 2
 rect 8 9 1 2
@@ -286,20 +286,20 @@ rect 6 7 16 17
 rect 10 11 16 17
 rect 11 12 16 17
 `},
-    {"peter2.nex", "###\n#\n####\n", "rect 1 4 1 2\nrect 1 2 2 3\nrect 1 5 3 4\n" },
-    {"u.nex", "١ + ٢ + ... + ١٨ = 一百五十三", "1 + 2 + ... + 18 = 153"},
-  } {
-    filename := x.prog
-    if filename[0] == '\n' {
-      ioutil.WriteFile(tmpnex, []byte(filename), 0777)
-      filename = tmpnex
-    }
-    cmd := exec.Command(nexBin, "-r", "-s", filename)
-    cmd.Stdin = strings.NewReader(x.in)
-    got, err := cmd.CombinedOutput()
-    dieErr(t, err, string(got))
-    if string(got) != x.out {
-      t.Fatalf("program: %s\nwant %q, got %q", x.prog, x.out, string(got))
-    }
-  }
+		{"peter2.nex", "###\n#\n####\n", "rect 1 4 1 2\nrect 1 2 2 3\nrect 1 5 3 4\n"},
+		{"u.nex", "١ + ٢ + ... + ١٨ = 一百五十三", "1 + 2 + ... + 18 = 153"},
+	} {
+		filename := x.prog
+		if filename[0] == '\n' {
+			ioutil.WriteFile(tmpnex, []byte(filename), 0777)
+			filename = tmpnex
+		}
+		cmd := exec.Command(nexBin, "-r", "-s", filename)
+		cmd.Stdin = strings.NewReader(x.in)
+		got, err := cmd.CombinedOutput()
+		dieErr(t, err, string(got))
+		if string(got) != x.out {
+			t.Fatalf("program: %s\nwant %q, got %q", x.prog, x.out, string(got))
+		}
+	}
 }
