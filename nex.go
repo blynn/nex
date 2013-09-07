@@ -25,7 +25,7 @@ type rule struct {
 }
 type Error string
 
-func (e Error) Error() string { return string(e) }
+func (e Error) String() string { return string(e) }
 
 var (
 	ErrInternal            = Error("internal error")
@@ -37,6 +37,12 @@ var (
 	ErrExtraneousBackslash = Error("extraneous backslash")
 	ErrBareClosure         = Error("closure applies to nothing")
 	ErrBadBackslash        = Error("illegal backslash escape")
+  ErrExpectedLBrace      = Error("expected '{'")
+  ErrUnmatchedLBrace     = Error("unmatched '{'")
+  ErrUnexpectedEOF       = Error("unexpected EOF")
+  ErrUnexpectedNewline   = Error("unexpected newline")
+  ErrUnmatchedLAngle     = Error("unmatched '<'")
+  ErrUnmatchedRAngle     = Error("unmatched '>'")
 )
 
 func ispunct(c rune) bool {
@@ -60,13 +66,15 @@ func escape(c rune) rune {
 	return -1
 }
 
+const (
+  kNil = iota
+  kRune
+  kClass
+  kWild
+)
+
 type edge struct {
-	// TODO: Make kind an enum (and use iota)
-	// 2 = rune class edge
-	// 1 = wild edge (".")
-	// 0 = rune edge
-	// -1 = empty edge
-	kind   int
+	kind   int    // Rune/Class/Wild/Nil.
 	r      rune   // Rune for rune edges.
 	lim    []rune // Pairs of limits for character class edges.
 	negate bool   // True if the character class is negated.
@@ -103,11 +111,11 @@ func writeDotGraph(outf *os.File, start *node, id string) {
         return fmt.Sprintf("U+%X", int(r))
       }
       switch e.kind {
-      case 0:
+      case kRune:
         label = fmt.Sprintf("[label=%q]", runeToDot(e.r))
-      case 1:
+      case kWild:
         label = "[color=blue]"
-      case 2:
+      case kClass:
         label = "[label=\"["
         if e.negate {
           label += "^"
@@ -169,7 +177,7 @@ func gen(out io.Writer, x *rule) {
 	// e.g. the alphabet of /[0-9]*[Ee][2-5]*/ is sing: { E, e },
 	// lim: { [0-1], [2-5], [6-9] } and the wild element.
 	sing := make(map[rune]bool)
-	lim := make([]rune, 0, 8)
+	var lim []rune
 	var insertLimits func(l, r rune)
 	// Insert a new range [l-r] into `lim`, breaking it up if it overlaps, and
 	// discarding it if it coincides with an existing range. We keep `lim`
@@ -223,7 +231,6 @@ func gen(out io.Writer, x *rule) {
 	newNode := func() *node {
 		res := new(node)
 		res.n = n
-		res.e = make([]*edge, 0, 8)
 		n++
 		return res
 	}
@@ -235,24 +242,24 @@ func gen(out io.Writer, x *rule) {
 	}
 	newWildEdge := func(u, v *node) *edge {
 		res := newEdge(u, v)
-		res.kind = 1
+		res.kind = kWild
 		return res
 	}
 	newRuneEdge := func(u, v *node, r rune) *edge {
 		res := newEdge(u, v)
-		res.kind = 0
+		res.kind = kRune
 		res.r = r
 		sing[r] = true
 		return res
 	}
 	newNilEdge := func(u, v *node) *edge {
 		res := newEdge(u, v)
-		res.kind = -1
+		res.kind = kNil
 		return res
 	}
 	newClassEdge := func(u, v *node) *edge {
 		res := newEdge(u, v)
-		res.kind = 2
+		res.kind = kClass
 		res.lim = make([]rune, 0, 2)
 		return res
 	}
@@ -483,7 +490,7 @@ func gen(out io.Writer, x *rule) {
 		do = func(i int) {
 			v := short[i]
 			for _, e := range v.e {
-				if -1 == e.kind && !mark[e.dst.n] {
+				if e.kind == kNil && !mark[e.dst.n] {
 					st[e.dst.n] = true
 					do(e.dst.n)
 				}
@@ -496,9 +503,9 @@ func gen(out io.Writer, x *rule) {
 			}
 		}
 	}
-	todo := make([]*node, 0, n)
+	var todo []*node
 	tab := make(map[string]*node)
-	buf := make([]byte, 0, 8)
+	var buf []byte
 	dfacount := 0
 	{  // Construct the node of no return.
 		for i := 0; i < n; i++ {
@@ -509,7 +516,7 @@ func gen(out io.Writer, x *rule) {
 		tab[string(buf)] = tmp
 	}
 	newDFANode := func(st []bool) (res *node, found bool) {
-		buf = buf[:0]
+		buf = nil
 		accept := false
 		for i, v := range st {
 			if v {
@@ -522,7 +529,6 @@ func gen(out io.Writer, x *rule) {
 		res, found = tab[string(buf)]
 		if !found {
 			res = new(node)
-			res.set = make([]int, 0, 8)
 			res.n = dfacount
 			res.accept = accept
 			dfacount++
@@ -557,11 +563,11 @@ func gen(out io.Writer, x *rule) {
 			states := make([]bool, n)
 			for _, i := range v.set {
 				for _, e := range short[i].e {
-					if e.kind == 0 && e.r == r {
+					if e.kind == kRune && e.r == r {
 						states[e.dst.n] = true
-					} else if e.kind == 1 {
+					} else if e.kind == kWild {
 						states[e.dst.n] = true
-					} else if e.kind == 2 && e.negate != inClass(r, e.lim) {
+					} else if e.kind == kClass && e.negate != inClass(r, e.lim) {
 						states[e.dst.n] = true
 					}
 				}
@@ -573,9 +579,9 @@ func gen(out io.Writer, x *rule) {
 			states := make([]bool, n)
 			for _, i := range v.set {
 				for _, e := range short[i].e {
-					if e.kind == 1 {
+					if e.kind == kWild {
 						states[e.dst.n] = true
-					} else if e.kind == 2 && e.negate != inClass(lim[j], e.lim) {
+					} else if e.kind == kClass && e.negate != inClass(lim[j], e.lim) {
 						states[e.dst.n] = true
 					}
 				}
@@ -583,11 +589,11 @@ func gen(out io.Writer, x *rule) {
 			e := newClassEdge(v, get(states))
 			e.lim = append(e.lim, lim[j], lim[j+1])
 		}
-		// Other.
+		// Wild.
 		states := make([]bool, n)
 		for _, i := range v.set {
 			for _, e := range short[i].e {
-				if e.kind == 1 || (e.kind == 2 && e.negate) {
+				if e.kind == kWild || (e.kind == kClass && e.negate) {
 					states[e.dst.n] = true
 				}
 			}
@@ -613,17 +619,17 @@ func gen(out io.Writer, x *rule) {
 		fmt.Fprintf(out, "  switch(r) {\n")
 		for _, e := range v.e {
 			m := e.dst.n
-			if e.kind == 0 {
+			if e.kind == kRune {
 				fmt.Fprintf(out, "  case %d: return %d\n", e.r, m)
 			}
 		}
 		fmt.Fprintf(out, "  default:\n    switch {\n")
 		for _, e := range v.e {
 			m := e.dst.n
-			if e.kind == 2 {
+			if e.kind == kClass {
 				fmt.Fprintf(out, "    case %d <= r && r <= %d: return %d\n",
 					e.lim[0], e.lim[1], m)
-			} else if e.kind == 1 {
+			} else if e.kind == kWild {
 				fmt.Fprintf(out, "    default: return %d\n", m)
 			}
 		}
@@ -669,27 +675,25 @@ func process(output io.Writer, input io.Reader) {
 	in := bufio.NewReader(input)
 	out := bufio.NewWriter(output)
 	var r rune
-	done := false
-	regex := make([]rune, 0, 8)
-	read := func() {
-		var er error
-		r, _, er = in.ReadRune()
-		if er == io.EOF {
-			done = true
-		} else if er != nil {
-			panic(er.Error())
+	var regex []rune
+	read := func() bool {
+		var err error
+		r, _, err = in.ReadRune()
+		if err == io.EOF {
+			return true
 		}
+		if err != nil {
+			panic(err)
+		}
+		return false
 	}
-	skipws := func() {
-		for {
-			read()
-			if done {
-				break
-			}
+	skipws := func() bool {
+		for !read() {
 			if strings.IndexRune(" \n\t\r", r) == -1 {
-				break
+				return false
 			}
 		}
+		return true
 	}
 	var rules []*rule
 	usercode := false
@@ -704,18 +708,17 @@ func process(output io.Writer, input io.Reader) {
 		id++
 		return x
 	}
-	buf := make([]rune, 0, 8)
+	var buf []rune
 	readCode := func() string {
 		if '{' != r {
-			panic("expected {")
+			panic(ErrExpectedLBrace)
 		}
-		buf = buf[:0]
+		buf = nil
 		nesting := 1
 		for {
 			buf = append(buf, r)
-			read()
-			if done {
-				panic("unmatched {")
+			if read() {
+				panic(ErrUnmatchedLBrace)
 			}
 			if '{' == r {
 				nesting++
@@ -737,47 +740,45 @@ func process(output io.Writer, input io.Reader) {
 		declvar := func() {
 			decls += fmt.Sprintf("var a%d [%d]dfa\n", family, rulen)
 		}
-		for !done {
-			skipws()
-			if done {
+		for {
+			if skipws() {
 				break
 			}
-			regex = regex[:0]
+			regex = nil
 			if '>' == r {
 				if 0 == family {
-					panic("unmatched >")
+					panic(ErrUnmatchedRAngle)
 				}
 				x := newRule(family, -1)
 				x.code = "yylex = yylex.pop()\n"
 				declvar()
-				skipws()
+				if skipws() {
+					panic(ErrUnexpectedEOF)
+				}
 				x.code += readCode()
 				return
 			}
 			delim := r
-			read()
-			if done {
-				panic("unterminated pattern")
+			if read() {
+				panic(ErrUnexpectedEOF)
 			}
 			for {
 				if r == delim && (len(regex) == 0 || regex[len(regex)-1] != '\\') {
 					break
 				}
 				if '\n' == r {
-					panic("regex interrupted by newline")
+					panic(ErrUnexpectedNewline)
 				}
 				regex = append(regex, r)
-				read()
-				if done {
-					panic("unterminated pattern")
+				if read() {
+					panic(ErrUnexpectedEOF)
 				}
 			}
 			if "" == string(regex) {
 				usercode = true
 				break
 			}
-			skipws()
-			if done {
+			if skipws() {
 				panic("last pattern lacks action")
 			}
 			x := newRule(family, rulen)
@@ -786,8 +787,7 @@ func process(output io.Writer, input io.Reader) {
 			copy(x.regex, regex)
 			nested := false
 			if '<' == r {
-				skipws()
-				if done {
+				if skipws() {
 					panic("'<' lacks action")
 				}
 				x.code = fmt.Sprintf("yylex = yylex.push(%d)\n", familyn)
@@ -800,7 +800,7 @@ func process(output io.Writer, input io.Reader) {
 			}
 		}
 		if 0 != family {
-			panic("unmatched <")
+			panic(ErrUnmatchedLAngle)
 		}
 		x := newRule(family, -1)
 		x.code = "// [END]\n"
@@ -812,16 +812,14 @@ func process(output io.Writer, input io.Reader) {
 		return
 	}
 
-	skipws()
-	buf = buf[:0]
-	for !done {
+	buf = nil
+	for done := skipws(); !done; done = read() {
 		buf = append(buf, r)
-		read()
 	}
 	fs := token.NewFileSet()
 	t, err := parser.ParseFile(fs, "", string(buf), parser.ImportsOnly)
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 	printer.Fprint(out, fs, t)
 
@@ -841,8 +839,8 @@ func process(output io.Writer, input io.Reader) {
 
   out.WriteString(`import ("bufio";"io";"strings")
 type dfa struct {
-  acc []bool
-  f []func(rune) int
+  acc []bool  // Accepting states.
+  f []func(rune) int  // Transitions.
   id int
 }
 type family struct {
@@ -864,14 +862,16 @@ func init() {
 
 	out.WriteString(`}
 func getAction(c *frame) int {
-  if -1 == c.match { return -1 }
-  c.action = c.fam.a[c.match].id
-  c.match = -1
+  if -1 == c.matchi { return -1 }
+  c.action = c.fam.a[c.matchi].id
+  c.matchi = -1
   return c.action
 }
 type frame struct {
   atEOF bool
-  action, match, matchn, n int
+  matchi int  // Index of DFA with highest-precedence match so far; -1 means no match yet.
+  matchn int  // Length of highest-precedence match so far.
+  action, n int
   buf []rune
   text string
   in *bufio.Reader
@@ -882,14 +882,14 @@ func newFrame(in *bufio.Reader, index int) *frame {
   f := new(frame)
   f.buf = make([]rune, 0, 128)
   f.in = in
-  f.match = -1
+  f.matchi = -1
   f.fam = a[index]
   f.state = make([]int, len(f.fam.a))
   return f
 }
 type Lexer []*frame
 func NewLexer(in io.Reader) Lexer {
-  stack := make([]*frame, 0, 4)
+  var stack []*frame
   stack = append(stack, newFrame(bufio.NewReader(in), 0))
   return stack
 }
@@ -911,7 +911,7 @@ func (stack Lexer) nextAction() int {
 	  return getAction(c)
 	}
 	return c.fam.endcase
-      default: panic(er.Error())
+      default: panic(er)
       }
     }
     jammed := true
@@ -922,10 +922,11 @@ func (stack Lexer) nextAction() int {
       if -1 == c.state[i] { continue }
       jammed = false
       if x.acc[c.state[i]] {
-	if -1 == c.match || c.matchn < c.n+1 || c.match > i {
-	  c.match = i
-	  c.matchn = c.n+1
-	}
+        // Higher precedence match? Since the DFAs are run in parallel, c.matchn is at most c.n + 1, so we skip length equality check for the 3rd condition.
+        if -1 == c.matchi || c.matchn < c.n + 1 || c.matchi > i {
+          c.matchi = i
+          c.matchn = c.n + 1
+        }
       }
     }
     if jammed {
@@ -993,11 +994,11 @@ func dieErr(err error, s string) {
   }
 }
 
-
-func createFile(filename string) *os.File {
+func createDotFile(filename string) *os.File {
   if filename == "" {
     return nil
   }
+  dieIf(strings.HasSuffix(filename, ".nex"), "nex: DOT filename ends with .nex:", filename)
   file, err := os.Create(filename)
   dieErr(err, "Create")
   return file
@@ -1011,8 +1012,8 @@ func main() {
 	dfadotFile := flag.String("dfadot", "", `show DFA graph in DOT format`)
 	flag.Parse()
 
-  nfadot = createFile(*nfadotFile)
-  dfadot = createFile(*dfadotFile)
+  nfadot = createDotFile(*nfadotFile)
+  dfadot = createDotFile(*dfadotFile)
   defer func() {
     if (nfadot != nil) {
       dieErr(nfadot.Close(), "Close")
