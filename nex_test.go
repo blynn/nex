@@ -66,7 +66,19 @@ func TestNexPrograms(t *testing.T) {
 		// A newline at the beginning of the 'prog' field means the test Nex program
 		// is inline. Otherwise 'prog' is a filename containing the test program.
 		prog, in, out string
-	}{
+  }{
+    // A partial match regex has no effect on an immediately following match.
+		{`
+/abcd/ { print("ABCD") }
+/\n/   { println() }
+//
+package main
+import "os"
+func main() {
+  NN_FUN(NewLexer(os.Stdin))
+}
+`, "abcd\nbabcd\naabcd\nabcabcd\n", "ABCD\nABCD\nABCD\nABCD\n"},
+
 		// Simple nested regex test.
 		{`
 /abc/ < { print("[") }

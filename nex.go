@@ -367,8 +367,7 @@ func gen(out io.Writer, x *rule) {
 				panic(ErrUnmatchedLpar)
 			}
 		case '.':
-			start = newNode()
-			end = newNode()
+			start, end = newNode(), newNode()
 			newWildEdge(start, end)
 		case ']':
 			panic(ErrUnmatchedRbkt)
@@ -379,8 +378,7 @@ func gen(out io.Writer, x *rule) {
 				panic(ErrUnmatchedLbkt)
 			}
 		default:
-			start = newNode()
-			end = newNode()
+			start, end = newNode(), newNode()
 			newRuneEdge(start, end, maybeEscape())
 		}
 		pos++
@@ -432,12 +430,9 @@ func gen(out io.Writer, x *rule) {
 	}
 	pre = func() (start, end *node) {
 		start, end = pcat()
-		for {
-			if len(s) == pos {
-				return
-			}
+		for pos < len(s) {
 			if s[pos] != '|' {
-				return
+				panic(ErrInternal)
 			}
 			pos++
 			nstart, nend := pcat()
@@ -450,13 +445,13 @@ func gen(out io.Writer, x *rule) {
 			newNilEdge(nend, tmp)
 			end = tmp
 		}
-		panic("unreachable")
+		return
 	}
 	start, end := pre()
 	end.accept = true
 
-	// Compute shortlist of nodes, as we may have discarded nodes left over
-	// from parsing. Also, make short[0] the start node.
+  // Compute shortlist of nodes (reachable nodes), as we may have discarded
+  // nodes left over from parsing. Also, make short[0] the start node.
 	short := make([]*node, 0, n)
 	{
 		var visit func(*node)
@@ -617,23 +612,25 @@ func gen(out io.Writer, x *rule) {
 		}
 		fmt.Fprintf(out, "fun[%d] = func(r rune) int {\n", v.n)
 		fmt.Fprintf(out, "  switch(r) {\n")
+		classCases := ""
+		var wildDest int
 		for _, e := range v.e {
 			m := e.dst.n
-			if e.kind == kRune {
+			switch e.kind {
+			case kRune:
 				fmt.Fprintf(out, "  case %d: return %d\n", e.r, m)
-			}
-		}
-		fmt.Fprintf(out, "  default:\n    switch {\n")
-		for _, e := range v.e {
-			m := e.dst.n
-			if e.kind == kClass {
-				fmt.Fprintf(out, "    case %d <= r && r <= %d: return %d\n",
+			case kClass:
+				classCases += fmt.Sprintf("    case %d <= r && r <= %d: return %d\n",
 					e.lim[0], e.lim[1], m)
-			} else if e.kind == kWild {
-				fmt.Fprintf(out, "    default: return %d\n", m)
+			case kWild:
+				wildDest = m
 			}
 		}
-		fmt.Fprintf(out, "    }\n  }\n  panic(\"unreachable\")\n}\n")
+		fmt.Fprintf(out, "  }\n")
+		if classCases != "" {
+			fmt.Fprintf(out, "\tswitch {\n"+classCases+"\t}\n")
+		}
+		fmt.Fprintf(out, "\treturn %v\n}\n", wildDest)
 	}
 	fmt.Fprintf(out, "a%d[%d].acc = acc[:]\n", x.family, x.index)
 	fmt.Fprintf(out, "a%d[%d].f = fun[:]\n", x.family, x.index)
@@ -862,16 +859,14 @@ func init() {
 
 	out.WriteString(`}
 func getAction(c *frame) int {
-  if -1 == c.matchi { return -1 }
-  c.action = c.fam.a[c.matchi].id
-  c.matchi = -1
-  return c.action
+  if c.matchn == 0 { return -1 }
+  return c.fam.a[c.matchi].id
 }
 type frame struct {
   atEOF bool
-  matchi int  // Index of DFA with highest-precedence match so far; -1 means no match yet.
+  matchi int  // Index of DFA with highest-precedence match so far.
   matchn int  // Length of highest-precedence match so far.
-  action, n int
+  n int
   buf []rune
   text string
   in *bufio.Reader
@@ -880,9 +875,7 @@ type frame struct {
 }
 func newFrame(in *bufio.Reader, index int) *frame {
   f := new(frame)
-  f.buf = make([]rune, 0, 128)
   f.in = in
-  f.matchi = -1
   f.fam = a[index]
   f.state = make([]int, len(f.fam.a))
   return f
@@ -901,17 +894,17 @@ func (stack Lexer) nextAction() int {
   for {
     if c.atEOF { return c.fam.endcase }
     if c.n == len(c.buf) {
-      r,_,er := c.in.ReadRune()
-      switch er {
+      r,_,err := c.in.ReadRune()
+      switch err {
       case nil: c.buf = append(c.buf, r)
       case io.EOF:
-	c.atEOF = true
-	if c.n > 0 {
-	  c.text = string(c.buf)
-	  return getAction(c)
-	}
-	return c.fam.endcase
-      default: panic(er)
+        c.atEOF = true
+        if c.n > 0 {
+          c.text = string(c.buf)
+          return getAction(c)
+        }
+        return c.fam.endcase
+      default: panic(err)
       }
     }
     jammed := true
@@ -922,8 +915,8 @@ func (stack Lexer) nextAction() int {
       if -1 == c.state[i] { continue }
       jammed = false
       if x.acc[c.state[i]] {
-        // Higher precedence match? Since the DFAs are run in parallel, c.matchn is at most c.n + 1, so we skip length equality check for the 3rd condition.
-        if -1 == c.matchi || c.matchn < c.n + 1 || c.matchi > i {
+        // Higher precedence match? Since the DFAs are run in parallel, c.matchn is at most c.n + 1, so we skip length equality check in the second condition.
+        if c.matchn < c.n + 1 || c.matchi > i {
           c.matchi = i
           c.matchn = c.n + 1
         }
@@ -931,12 +924,15 @@ func (stack Lexer) nextAction() int {
     }
     if jammed {
       a := getAction(c)
-      if -1 == a { c.matchn = c.n + 1 }
+      if -1 == a {
+        c.buf = c.buf[1:]
+      } else {
+        c.text = string(c.buf[:c.matchn])
+        c.buf = c.buf[c.matchn:]
+      }
       c.n = 0
+      c.matchn = 0
       for i, _ := range c.state { c.state[i] = 0 }
-      c.text = string(c.buf[:c.matchn])
-      copy(c.buf, c.buf[c.matchn:])
-      c.buf = c.buf[:len(c.buf) - c.matchn]
       return a
     }
     c.n++
@@ -1033,11 +1029,11 @@ func main() {
 			basename = basename[:n]
 		}
 		infile, err = os.Open(flag.Arg(0))
-		dieIf(infile == nil, "nex:", err)
+		dieErr(err, "nex")
 		defer infile.Close()
 		if !*autorun {
 			outfile, err = os.Create(basename + ".nn.go")
-			dieIf(outfile == nil, "nex:", err)
+			dieErr(err, "nex")
 			defer outfile.Close()
 		}
 	}
@@ -1045,18 +1041,16 @@ func main() {
 		tmpdir, err := ioutil.TempDir("", "nex")
 		dieIf(err != nil, "tempdir:", err)
 		defer func() {
-			err = os.RemoveAll(tmpdir)
-			dieIf(err != nil, "removeall %q: %s", tmpdir, err)
+			dieErr(os.RemoveAll(tmpdir), "RemoveAll")
 		}()
 		outfile, err = os.Create(tmpdir + "/lets.go")
-		dieIf(outfile == nil, "nex:", err)
+		dieErr(err, "nex")
 		defer outfile.Close()
 	}
 	process(outfile, infile)
 	if *autorun {
 		c := exec.Command("go", "run", outfile.Name())
 		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-		err = c.Run()
-		dieIf(err != nil, "go run: %s", err)
+		dieErr(c.Run(), "go run")
 	}
 }
