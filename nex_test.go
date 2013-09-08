@@ -66,8 +66,8 @@ func TestNexPrograms(t *testing.T) {
 		// A newline at the beginning of the 'prog' field means the test Nex program
 		// is inline. Otherwise 'prog' is a filename containing the test program.
 		prog, in, out string
-  }{
-    // A partial match regex has no effect on an immediately following match.
+	}{
+		// A partial match regex has no effect on an immediately following match.
 		{`
 /abcd/ { print("ABCD") }
 /\n/   { println() }
@@ -79,13 +79,25 @@ func main() {
 }
 `, "abcd\nbabcd\naabcd\nabcabcd\n", "ABCD\nABCD\nABCD\nABCD\n"},
 
-		// Simple nested regex test.
+		// Nested regex test. The simplistic parser means we must use commented
+    // braces to balance out quoted braces.
 		{`
-/abc/ < { print("[") }
-  /a/   { print("A") }
-  /b/   { print("B") }
-  /c/   { print("C") }
->       { print("]") }
+/a[bcd]*e/ < { print("[") }
+  /a/        { print("A") }
+  /bcd/ <    { print("(") }
+  /c/        { print("X") }
+  >          { print(")") }
+  /e/        { print("E") }
+  /ccc/ <    {
+    print("{")
+    // }  [balance out the quoted left brace]
+  }
+  /./        { print("?") }
+  >          {
+    // {  [balance out the quoted right brace]
+    print("}")
+  }
+>            { print("]") }
 /\n/ { println() }
 /./ { print(".") }
 //
@@ -94,7 +106,7 @@ import "os"
 func main() {
   NN_FUN(NewLexer(os.Stdin))
 }
-`, "abccbaabc", "[ABC]...[ABC]"},
+`, "abcdeabcabcdabcdddcccbbbcde", "[A(X)E].......[A(X){???}(X)E]"},
 
 		// Exercise hyphens in character classes.
 		{`

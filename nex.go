@@ -397,8 +397,7 @@ func gen(out io.Writer, x *rule) {
 			newNilEdge(end, start)
 			nend := newNode()
 			newNilEdge(end, nend)
-			start = end
-			end = nend
+			start, end = end, nend
 		case '+':
 			newNilEdge(end, start)
 			nend := newNode()
@@ -450,8 +449,8 @@ func gen(out io.Writer, x *rule) {
 	start, end := pre()
 	end.accept = true
 
-  // Compute shortlist of nodes (reachable nodes), as we may have discarded
-  // nodes left over from parsing. Also, make short[0] the start node.
+	// Compute shortlist of nodes (reachable nodes), as we may have discarded
+	// nodes left over from parsing. Also, make short[0] the start node.
 	short := make([]*node, 0, n)
 	{
 		var visit func(*node)
@@ -611,22 +610,23 @@ func gen(out io.Writer, x *rule) {
 			fmt.Fprintf(out, "acc[%d] = true\n", v.n)
 		}
 		fmt.Fprintf(out, "fun[%d] = func(r rune) int {\n", v.n)
-		fmt.Fprintf(out, "  switch(r) {\n")
-		classCases := ""
+		var runeCases, classCases string
 		var wildDest int
 		for _, e := range v.e {
 			m := e.dst.n
 			switch e.kind {
 			case kRune:
-				fmt.Fprintf(out, "  case %d: return %d\n", e.r, m)
+				runeCases += fmt.Sprintf("\t\tcase %d: return %d\n", e.r, m)
 			case kClass:
-				classCases += fmt.Sprintf("    case %d <= r && r <= %d: return %d\n",
+				classCases += fmt.Sprintf("\t\tcase %d <= r && r <= %d: return %d\n",
 					e.lim[0], e.lim[1], m)
 			case kWild:
 				wildDest = m
 			}
 		}
-		fmt.Fprintf(out, "  }\n")
+		if runeCases != "" {
+			fmt.Fprintf(out, "\tswitch(r) {\n"+runeCases+"\t}\n")
+		}
 		if classCases != "" {
 			fmt.Fprintf(out, "\tswitch {\n"+classCases+"\t}\n")
 		}
@@ -672,7 +672,6 @@ func process(output io.Writer, input io.Reader) {
 	in := bufio.NewReader(input)
 	out := bufio.NewWriter(output)
 	var r rune
-	var regex []rune
 	read := func() bool {
 		var err error
 		r, _, err = in.ReadRune()
@@ -710,24 +709,22 @@ func process(output io.Writer, input io.Reader) {
 		if '{' != r {
 			panic(ErrExpectedLBrace)
 		}
-		buf = nil
+		buf = []rune{r}
 		nesting := 1
 		for {
-			buf = append(buf, r)
 			if read() {
 				panic(ErrUnmatchedLBrace)
 			}
+			buf = append(buf, r)
 			if '{' == r {
 				nesting++
-			}
-			if '}' == r {
+			} else if '}' == r {
 				nesting--
 				if 0 == nesting {
 					break
 				}
 			}
 		}
-		buf = append(buf, r)
 		return string(buf)
 	}
 	var decls string
@@ -739,9 +736,8 @@ func process(output io.Writer, input io.Reader) {
 		}
 		for {
 			if skipws() {
-				break
+        panic(ErrUnexpectedEOF)
 			}
-			regex = nil
 			if '>' == r {
 				if 0 == family {
 					panic(ErrUnmatchedRAngle)
@@ -759,6 +755,7 @@ func process(output io.Writer, input io.Reader) {
 			if read() {
 				panic(ErrUnexpectedEOF)
 			}
+      var regex []rune
 			for {
 				if r == delim && (len(regex) == 0 || regex[len(regex)-1] != '\\') {
 					break
