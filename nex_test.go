@@ -321,7 +321,7 @@ rect 11 12 16 17
 		cmd := exec.Command(nexBin, "-r", "-s", filename)
 		cmd.Stdin = strings.NewReader(x.in)
 		got, err := cmd.CombinedOutput()
-		dieErr(t, err, string(got))
+		dieErr(t, err, x.prog + " " + string(got))
 		if string(got) != x.out {
 			t.Fatalf("program: %s\nwant %q, got %q", x.prog, x.out, string(got))
 		}
