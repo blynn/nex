@@ -22,6 +22,7 @@ type rule struct {
 	regex             []rune
 	code              string
 	index int
+  kid []*rule
 }
 type Error string
 
@@ -152,7 +153,7 @@ func inClass(r rune, lim []rune) bool {
 
 var dfadot, nfadot *os.File
 
-func gen(out io.Writer, x *rule) {
+func gen(out *bufio.Writer, x *rule) {
 	s := x.regex
 	// Regex -> NFA
 	// We cannot have our alphabet be all Unicode characters. Instead,
@@ -595,16 +596,30 @@ func gen(out io.Writer, x *rule) {
 		writeDotGraph(dfadot, dfastart, fmt.Sprintf("DFA_%v", x.index))
 	}
 	// DFA -> Go
-	// TODO: Literal arrays instead of a series of assignments.
-	fmt.Fprintf(out, "{\nvar acc [%d]bool\nvar fun [%d]func(rune) int\n", n, n)
+  sorted := make([]*node, n)
 	for _, v := range tab {
-		if -1 == v.n {
-			continue
-		}
-		if v.accept {
-			fmt.Fprintf(out, "acc[%d] = true\n", v.n)
-		}
-		fmt.Fprintf(out, "fun[%d] = func(r rune) int {\n", v.n)
+		if -1 != v.n {
+      sorted[v.n] = v
+    }
+  }
+
+  fmt.Fprintf(out, "\n// %v\n", string(x.regex))
+	for i, v := range sorted {
+    if i == 0 {
+      out.WriteString("{[]bool{")
+    } else {
+      out.WriteString(", ")
+    }
+    if v.accept {
+      out.WriteString("true")
+    } else {
+      out.WriteString("false")
+    }
+  }
+  out.WriteString("}, []func(rune) int{\n")
+
+	for _, v := range sorted {
+    out.WriteString("func(r rune) int {\n")
 		var runeCases, classCases string
 		var wildDest int
 		for _, e := range v.e {
@@ -620,65 +635,80 @@ func gen(out io.Writer, x *rule) {
 			}
 		}
 		if runeCases != "" {
-			fmt.Fprintf(out, "\tswitch(r) {\n"+runeCases+"\t}\n")
+			out.WriteString("\tswitch(r) {\n"+runeCases+"\t}\n")
 		}
 		if classCases != "" {
-			fmt.Fprintf(out, "\tswitch {\n"+classCases+"\t}\n")
+			out.WriteString("\tswitch {\n"+classCases+"\t}\n")
 		}
-		fmt.Fprintf(out, "\treturn %v\n}\n", wildDest)
+		fmt.Fprintf(out, "\treturn %v\n},\n", wildDest)
 	}
+  out.WriteString("},")
+  if len(x.kid) == 0 {
+    out.WriteString("nil")
+  } else {
+    out.WriteString("[]dfa{")
+    for _, kid := range x.kid {
+      gen(out, kid)
+    }
+    out.WriteString("}")
+  }
+  out.WriteString("},\n")
 }
 
 var standalone, customError, autorun *bool
 
-func writeLex(out *bufio.Writer, families [][]*rule) {
+func writeFamily(out *bufio.Writer, node *rule, lvl int) {
+  tab := func() {
+    for i := 0; i < lvl; i++ {
+      out.WriteByte('\t')
+    }
+  }
+  tab()
+  fmt.Fprintf(out, "for flag := true; flag; { switch yylex.next(%v) {\n", lvl)
+  for i, x := range node.kid {
+    tab()
+    fmt.Fprintf(out, "\tcase %d:  // %d\n", x.index, i)
+    lvl++
+    if x.index == -1 {
+      // TODO: Move outside switch statement.
+      tab()
+      out.WriteString("\tyylex.pop()\n")
+      tab()
+      out.WriteString("\tflag = false\n")
+    }
+    if x.kid != nil {
+      tab()
+      out.WriteString("\tif yylex.fresh {\n")
+      tab()
+      out.WriteString("\t\t" + x.code + "\n")
+      tab()
+      out.WriteString("\t}\n")
+      writeFamily(out, x, lvl)
+    } else {
+      tab()
+      out.WriteString("\t" + x.code + "\n")
+    }
+    lvl--
+  }
+  tab()
+  out.WriteString("}}\n")
+}
+func writeLex(out *bufio.Writer, root rule) {
 	if !*customError {
 		out.WriteString(`func (yylex Lexer) Error(e string) {
   panic(e)
 }`)
 	}
-	out.WriteString(`
-func (yylex *Lexer) Lex(lval *yySymType) int {
-`)
-  for i, _ := range families {
-    fmt.Fprintf(out, "var nex%d func(*Lexer) int\n", i)
-  }
-  for i, rules := range families {
-  fmt.Fprintf(out, `
-nex%d = func(c *Lexer) int {
-  helpful: switch c.nextAction() {
-`, i)
-    for _, x := range rules {
-      fmt.Fprintf(out, "\n\t\tcase %d:  //%s/\n", x.index, string(x.regex))
-      out.WriteString(x.code)
-      if x.index != -1 {
-        out.WriteString("\n\t\tgoto helpful\n")
-      }
-    }
-    out.WriteString("\n\t}\nreturn 0\n}\n")
-  }
-	out.WriteString("\t\treturn nex0(yylex)\n}\n")
+	out.WriteString("\nfunc (yylex *Lexer) Lex(lval *yySymType) int {\n")
+  writeFamily(out, &root, 0)
+	out.WriteString("\treturn 0\n}\n")
 }
-func writeNNFun(out *bufio.Writer, families [][]*rule) {
-	out.WriteString("func(yylex *Lexer) {\n")
-  for i, _ := range families {
-    fmt.Fprintf(out, "var nex%d func(*Lexer)\n", i)
-  }
-  for i, rules := range families {
-  fmt.Fprintf(out, `
-nex%d = func(c *Lexer) {
-  helpful: switch c.nextAction() {
-`, i)
-    for _, x := range rules {
-      fmt.Fprintf(out, "\n\t\tcase %d:  //%s/\n", x.index, string(x.regex))
-      out.WriteString(x.code)
-      if x.index != -1 {
-        out.WriteString("\n\t\tgoto helpful\n")
-      }
-    }
-    out.WriteString("\n\t}\n\n}\n")
-  }
-	out.WriteString("\t\tnex0(yylex)\n\t}")
+func writeNNFun(out *bufio.Writer, root rule) {
+	out.WriteString(`
+func(yylex *Lexer) {
+`)
+  writeFamily(out, &root, 0)
+	out.WriteString("}")
 }
 func process(output io.Writer, input io.Reader) {
 	in := bufio.NewReader(input)
@@ -703,8 +733,6 @@ func process(output io.Writer, input io.Reader) {
 		}
 		return true
 	}
-  var families [][]*rule
-	usercode := false
 	var buf []rune
 	readCode := func() string {
 		if '{' != r {
@@ -728,35 +756,30 @@ func process(output io.Writer, input io.Reader) {
 		}
 		return string(buf)
 	}
-	var decls string
-	var parse func()
-	parse = func() {
-    family := len(families)
-    families = append(families, nil)
-		rulen := 0
-		declvar := func() {
-			decls += fmt.Sprintf("var a%d [%d]dfa\n", family, rulen)
-		}
-    newRule := func(index int) *rule {
-      x := new(rule)
-      families[family] = append(families[family], x)
-      x.index = index
-      return x
+  var root rule
+  family := 0
+	usercode := false
+	var parse func(*rule)
+	parse = func(node *rule) {
+    rulen := 0
+    newKid := func(index int) *rule {
+      kid := new(rule)
+      node.kid = append(node.kid, kid)
+      kid.index = index
+      return kid
     }
 		for {
 			if skipws() {
         panic(ErrUnexpectedEOF)
 			}
 			if '>' == r {
-				if 0 == family {
+				if node == &root {
 					panic(ErrUnmatchedRAngle)
 				}
-				x := newRule(-1)
-				declvar()
 				if skipws() {
 					panic(ErrUnexpectedEOF)
 				}
-				x.code += readCode()
+				newKid(-1).code += readCode()
 				return
 			}
 			delim := r
@@ -783,7 +806,7 @@ func process(output io.Writer, input io.Reader) {
 			if skipws() {
 				panic("last pattern lacks action")
 			}
-			x := newRule(rulen)
+			x := newKid(rulen)
 			rulen++
 			x.regex = make([]rune, len(regex))
 			copy(x.regex, regex)
@@ -796,18 +819,15 @@ func process(output io.Writer, input io.Reader) {
 			}
 			x.code += readCode()
 			if nested {
-				x.code += fmt.Sprintf("\nnex%d(newFrame(bufio.NewReader(strings.NewReader(c.text)), %d))\n", len(families), len(families))
-				parse()
+				parse(x)
 			}
 		}
 		if 0 != family {
 			panic(ErrUnmatchedLAngle)
 		}
-		x := newRule(-1)
-		x.code = "// [END]\n"
-		declvar()
+		newKid(-1).code = "// [END]\n"
 	}
-	parse()
+	parse(&root)
 
 	if !usercode {
 		return
@@ -842,106 +862,121 @@ func process(output io.Writer, input io.Reader) {
 type dfa struct {
   acc []bool  // Accepting states.
   f []func(rune) int  // Transitions.
+  nest []dfa
 }
-type family struct {
-  a []dfa
-}
-` + decls)
-  fmt.Fprintf(out, `var a [%d]family
-func init() {
-`, len(families))
-  for family, rules := range families {
-    for i, x := range rules {
-      if -1 == x.index {
-        continue
-      }
-      gen(out, x)
-      fmt.Fprintf(out, "a%d[%d].acc = acc[:]\n", family, i)
-      fmt.Fprintf(out, "a%d[%d].f = fun[:]\n", family, i)
-      fmt.Fprintf(out, "}\n")
-    }
+`)
+	out.WriteString(" var a = []dfa{")
+  for _, kid := range root.kid {
+    gen(out, kid)
   }
-	for i := 0; i < len(families); i++ {
-		fmt.Fprintf(out, "a[%d].a = a%d[:]\n", i, i)
-	}
-
-	out.WriteString(`}
+	out.WriteString("}\n")
+	out.WriteString(`
+type intstring struct {
+  i int
+  s string
+}
 type Lexer struct {
-  atEOF bool
-  buf []rune
+  // The lexer runs in its own goroutine, and communicates via channel 'ch'.
+  ch chan intstring
+  // We record the level of nesting because the action could return, and a
+  // subsequent call expects to pick up where it left off. In other words,
+  // we're simulating a coroutine.
+  // TODO: Support a channel-based variant that compatible with Go's yacc.
+  stack []intstring
   text string
-  in *bufio.Reader
-  fam family
-  n int
+  fresh bool
 }
-func newFrame(in *bufio.Reader, index int) *Lexer {
-  f := new(Lexer)
-  f.in = in
-  f.fam = a[index]
-  return f
-}
-func newFrameFromString(s string, family int) *Lexer {
-  return newFrame(bufio.NewReader(strings.NewReader(s)), family)
-}
-func NewLexer(in io.Reader) *Lexer {
-  return newFrame(bufio.NewReader(in), 0)
-}
-func (c *Lexer) nextAction() int {
+func nextAction(in *bufio.Reader, ch chan intstring, family []dfa) {
   matchi := 0  // Index of DFA with highest-precedence match so far.
   matchn := 0  // Length of highest-precedence match so far.
-  state := make([]int, len(c.fam.a))
+  var buf []rune
+  n := 0
+  atEOF := false
+  state := make([]int, len(family))
+  text := ""
   for {
-    if c.atEOF { return -1 }
-    if c.n == len(c.buf) {
-      r,_,err := c.in.ReadRune()
+    if atEOF {
+      ch <- intstring{-1, text}
+      return
+    }
+    if n == len(buf) {
+      r,_,err := in.ReadRune()
       switch err {
-      case io.EOF: c.atEOF = true
-      case nil:    c.buf = append(c.buf, r)
+      case io.EOF: atEOF = true
+      case nil:    buf = append(buf, r)
       default:     panic(err)
       }
     }
     jammed := true
-    if !c.atEOF {
-      r := c.buf[c.n]
-      c.n++
-      for i, x := range c.fam.a {
+    if !atEOF {
+      r := buf[n]
+      n++
+      for i, x := range family {
         if -1 == state[i] { continue }
         state[i] = x.f[state[i]](r)
         if -1 == state[i] { continue }
         jammed = false
-        // Higher precedence match? DFAs are run in parallel, so matchn is at most len(c.buf), hence we may omit the length equality check.
-        if x.acc[state[i]] && (matchn < c.n || matchi > i) {
+        // Higher precedence match? DFAs are run in parallel, so matchn is at most len(buf), hence we may omit the length equality check.
+        if x.acc[state[i]] && (matchn < n || matchi > i) {
           matchi = i
-          matchn = c.n
+          matchn = n
         }
       }
     }
 
     if jammed {
       // All DFAs stuck. Return last match if it exists, otherwise advance by one rune and restart all DFAs.
-      c.n = 0
+      n = 0
+      state = make([]int, len(family))
       if matchn == 0 {
-        if c.atEOF {  // Empty input.
-          return -1
+        if atEOF {  // Empty input.
+          ch <- intstring{-1, text}
+          return
         }
-        state = make([]int, len(c.fam.a))
-        c.buf = c.buf[1:]
+        buf = buf[1:]
       } else {
-        c.text = string(c.buf[:matchn])
-        c.buf = c.buf[matchn:]
+        text = string(buf[:matchn])
+        buf = buf[matchn:]
         matchn = 0
-        return matchi
+        ch <- intstring{matchi, text}
+        if len(family[matchi].nest) > 0 {
+          nextAction(bufio.NewReader(strings.NewReader(text)), ch, family[matchi].nest)
+        }
       }
     }
   }
   panic("unreachable")
 }
+func NewLexer(in io.Reader) *Lexer {
+  f := new(Lexer)
+  f.ch = make(chan intstring)
+  go func() {
+    nextAction(bufio.NewReader(in), f.ch, a)
+  }()
+  return f
+}
 func (yylex *Lexer) Text() string {
-  return yylex.text
+  return yylex.stack[len(yylex.stack) - 1].s
+}
+func (yylex *Lexer) next(lvl int) int {
+  if lvl == len(yylex.stack) {
+    yylex.stack = append(yylex.stack, intstring{0, ""})
+  }
+  if lvl == len(yylex.stack) - 1 {
+    p := &yylex.stack[lvl]
+    *p = <-yylex.ch
+    yylex.fresh = true
+  } else {
+    yylex.fresh = false
+  }
+  return yylex.stack[lvl].i
+}
+func (yylex *Lexer) pop() {
+  yylex.stack = yylex.stack[:len(yylex.stack) - 1]
 }
 `)
 	if !*standalone {
-		writeLex(out, families)
+		writeLex(out, root)
 		out.WriteString(string(buf))
 		out.Flush()
 		return
@@ -955,7 +990,7 @@ func (yylex *Lexer) Text() string {
 			buf = buf[m:]
 			m = 0
 		} else if funmac == string(buf[:m]) {
-			writeNNFun(out, families)
+			writeNNFun(out, root)
 			buf = buf[m:]
 			m = 0
 		}
