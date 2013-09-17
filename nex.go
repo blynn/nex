@@ -21,6 +21,7 @@ import (
 type rule struct {
 	regex             []rune
 	code              string
+	endCode           string
 	index int
   kid []*rule
 }
@@ -663,35 +664,26 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
       out.WriteByte('\t')
     }
   }
-  tab()
-  fmt.Fprintf(out, "for flag := true; flag; { switch yylex.next(%v) {\n", lvl)
+  tab(); fmt.Fprintf(out, "for { switch yylex.next(%v) {\n", lvl)
   for i, x := range node.kid {
-    tab()
-    fmt.Fprintf(out, "\tcase %d:  // %d\n", x.index, i)
+    tab(); fmt.Fprintf(out, "\tcase %d:  // %d\n", x.index, i)
     lvl++
-    if x.index == -1 {
-      // TODO: Move outside switch statement.
-      tab()
-      out.WriteString("\tyylex.pop()\n")
-      tab()
-      out.WriteString("\tflag = false\n")
-    }
     if x.kid != nil {
-      tab()
-      out.WriteString("\tif yylex.fresh {\n")
-      tab()
-      out.WriteString("\t\t" + x.code + "\n")
-      tab()
-      out.WriteString("\t}\n")
+      tab(); out.WriteString("\tif yylex.fresh {\n")
+      tab(); out.WriteString("\t\t" + x.code + "\n")
+      tab(); out.WriteString("\t}\n")
       writeFamily(out, x, lvl)
     } else {
-      tab()
-      out.WriteString("\t" + x.code + "\n")
+      tab(); out.WriteString("\t" + x.code + "\n")
     }
+    tab(); out.WriteString("\tcontinue\n")
     lvl--
   }
-  tab()
-  out.WriteString("}}\n")
+  tab(); out.WriteString("\t}\n")
+  tab(); out.WriteString("\tbreak\n")
+  tab(); out.WriteString("}\n")
+  tab(); out.WriteString("yylex.pop()\n")
+  tab(); out.WriteString(node.endCode + "\n")
 }
 func writeLex(out *bufio.Writer, root rule) {
 	if !*customError {
@@ -704,9 +696,7 @@ func writeLex(out *bufio.Writer, root rule) {
 	out.WriteString("\treturn 0\n}\n")
 }
 func writeNNFun(out *bufio.Writer, root rule) {
-	out.WriteString(`
-func(yylex *Lexer) {
-`)
+	out.WriteString("func(yylex *Lexer) {\n")
   writeFamily(out, &root, 0)
 	out.WriteString("}")
 }
@@ -779,7 +769,7 @@ func process(output io.Writer, input io.Reader) {
 				if skipws() {
 					panic(ErrUnexpectedEOF)
 				}
-				newKid(-1).code += readCode()
+				node.endCode += readCode()
 				return
 			}
 			delim := r
@@ -825,7 +815,7 @@ func process(output io.Writer, input io.Reader) {
 		if 0 != family {
 			panic(ErrUnmatchedLAngle)
 		}
-		newKid(-1).code = "// [END]\n"
+		node.endCode = "// [END]\n"
 	}
 	parse(&root)
 
@@ -859,18 +849,6 @@ func process(output io.Writer, input io.Reader) {
 	}
 
 	out.WriteString(`import ("bufio";"io";"strings")
-type dfa struct {
-  acc []bool  // Accepting states.
-  f []func(rune) int  // Transitions.
-  nest []dfa
-}
-`)
-	out.WriteString(" var a = []dfa{")
-  for _, kid := range root.kid {
-    gen(out, kid)
-  }
-	out.WriteString("}\n")
-	out.WriteString(`
 type intstring struct {
   i int
   s string
@@ -883,77 +861,83 @@ type Lexer struct {
   // we're simulating a coroutine.
   // TODO: Support a channel-based variant that compatible with Go's yacc.
   stack []intstring
-  text string
   fresh bool
 }
-func nextAction(in *bufio.Reader, ch chan intstring, family []dfa) {
-  matchi := 0  // Index of DFA with highest-precedence match so far.
-  matchn := 0  // Length of highest-precedence match so far.
-  var buf []rune
-  n := 0
-  atEOF := false
-  state := make([]int, len(family))
-  text := ""
-  for {
-    if atEOF {
-      ch <- intstring{-1, text}
-      return
-    }
-    if n == len(buf) {
-      r,_,err := in.ReadRune()
-      switch err {
-      case io.EOF: atEOF = true
-      case nil:    buf = append(buf, r)
-      default:     panic(err)
+func NewLexer(in io.Reader) *Lexer {
+  type dfa struct {
+    acc []bool  // Accepting states.
+    f []func(rune) int  // Transitions.
+    nest []dfa
+  }
+  yylex := new(Lexer)
+  yylex.ch = make(chan intstring)
+  var scan func(in *bufio.Reader, ch chan intstring, family []dfa)
+  scan = func(in *bufio.Reader, ch chan intstring, family []dfa) {
+    matchi := 0  // Index of DFA with highest-precedence match so far.
+    matchn := 0  // Length of highest-precedence match so far.
+    var buf []rune
+    n := 0
+    atEOF := false
+    state := make([]int, len(family))
+    text := ""
+    for {
+      if atEOF {
+        ch <- intstring{-1, text}
+        break
       }
-    }
-    jammed := true
-    if !atEOF {
-      r := buf[n]
-      n++
-      for i, x := range family {
-        if -1 == state[i] { continue }
-        state[i] = x.f[state[i]](r)
-        if -1 == state[i] { continue }
-        jammed = false
-        // Higher precedence match? DFAs are run in parallel, so matchn is at most len(buf), hence we may omit the length equality check.
-        if x.acc[state[i]] && (matchn < n || matchi > i) {
-          matchi = i
-          matchn = n
+      if n == len(buf) {
+        r,_,err := in.ReadRune()
+        switch err {
+        case io.EOF: atEOF = true
+        case nil:    buf = append(buf, r)
+        default:     panic(err)
         }
       }
-    }
+      jammed := true
+      if !atEOF {
+        r := buf[n]
+        n++
+        for i, x := range family {
+          if -1 == state[i] { continue }
+          state[i] = x.f[state[i]](r)
+          if -1 == state[i] { continue }
+          jammed = false
+          // Higher precedence match? DFAs are run in parallel, so matchn is at most len(buf), hence we may omit the length equality check.
+          if x.acc[state[i]] && (matchn < n || matchi > i) {
+            matchi = i
+            matchn = n
+          }
+        }
+      }
 
-    if jammed {
-      // All DFAs stuck. Return last match if it exists, otherwise advance by one rune and restart all DFAs.
-      n = 0
-      state = make([]int, len(family))
-      if matchn == 0 {
-        if atEOF {  // Empty input.
-          ch <- intstring{-1, text}
-          return
-        }
-        buf = buf[1:]
-      } else {
-        text = string(buf[:matchn])
-        buf = buf[matchn:]
-        matchn = 0
-        ch <- intstring{matchi, text}
-        if len(family[matchi].nest) > 0 {
-          nextAction(bufio.NewReader(strings.NewReader(text)), ch, family[matchi].nest)
+      if jammed {
+        // All DFAs stuck. Return last match if it exists, otherwise advance by one rune and restart all DFAs.
+        n = 0
+        state = make([]int, len(family))
+        if matchn == 0 {
+          if atEOF {  // Empty input.
+            ch <- intstring{-1, text}
+            break
+          }
+          buf = buf[1:]
+        } else {
+          text = string(buf[:matchn])
+          buf = buf[matchn:]
+          matchn = 0
+          ch <- intstring{matchi, text}
+          if len(family[matchi].nest) > 0 {
+            scan(bufio.NewReader(strings.NewReader(text)), ch, family[matchi].nest)
+          }
         }
       }
     }
   }
-  panic("unreachable")
-}
-func NewLexer(in io.Reader) *Lexer {
-  f := new(Lexer)
-  f.ch = make(chan intstring)
-  go func() {
-    nextAction(bufio.NewReader(in), f.ch, a)
-  }()
-  return f
+  go scan(bufio.NewReader(in), yylex.ch, []dfa{`)
+  for _, kid := range root.kid {
+    gen(out, kid)
+  }
+	out.WriteString(`})
+  return yylex
 }
 func (yylex *Lexer) Text() string {
   return yylex.stack[len(yylex.stack) - 1].s
