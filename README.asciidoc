@@ -423,15 +423,3 @@ action is executed on end of input.
 Additionally, no empty regex is needed to mark the beginning of the Go program.
 (Fortunately, an empty regex is also a Go comment, so there's no harm done if
 present.)
-
-== TODO ==
-
-^ and $.
-
-Quoted braces in actions.
-
-\{DIGIT}.
-
-Start conditions.
-
-Maintain a scanner.Position.

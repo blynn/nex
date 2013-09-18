@@ -273,6 +273,16 @@ func TestGiantProgram(t *testing.T) {
 	for i, x := range []struct {
 		prog, in, out string
 	}{
+		// Test parentheses and $.
+		{`
+/[a-z]*/ <  { *lval += "[" }
+  /a(($*|$$)($($)$$$))$($$$)*/ { *lval += "0" }
+  /(e$|f$)/ { *lval += "1" }
+  /(qux)*/  { *lval += "2" }
+  /$/       { *lval += "." }
+>           { *lval += "]" }
+`, "a b c d e f g aaab aaaa eeeg fffe quxqux quxq quxe",
+"[0][.][.][.][1][1][.][.][0][.][1][2][2][21]"},
 		// Patterns like awk's BEGIN and END.
 		{`
 <          { *lval += "[" }
@@ -289,8 +299,8 @@ func TestGiantProgram(t *testing.T) {
 
 		// Nested regex test. The simplistic parser means we must use commented
 		// braces to balance out quoted braces.
-    // Sprinkle in a couple of return statements to check Lex() saves stack
-    // state correctly between calls.
+		// Sprinkle in a couple of return statements to check Lex() saves stack
+		// state correctly between calls.
 		{`
 /a[bcd]*e/ < { *lval += "[" }
   /a/        { *lval += "A" }
@@ -355,6 +365,6 @@ func Go() {
 	s += "func main() {\n" + body + "}\n"
 	err = ioutil.WriteFile("tmp.go", []byte(s), 0777)
 	dieErr(t, err, "WriteFile")
-	_, err = exec.Command("go", "run", "tmp.go").CombinedOutput()
-	dieErr(t, err, "go")
+	output, err := exec.Command("go", "run", "tmp.go").CombinedOutput()
+	dieErr(t, err, string(output))
 }

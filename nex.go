@@ -75,6 +75,8 @@ const (
 	kRune
 	kClass
 	kWild
+	kStart
+	kEnd
 )
 
 type edge struct {
@@ -239,6 +241,16 @@ func gen(out *bufio.Writer, x *rule) {
 		u.e = append(u.e, res)
 		return res
 	}
+	newStartEdge := func(u, v *node) *edge {
+		res := newEdge(u, v)
+		res.kind = kStart
+		return res
+	}
+	newEndEdge := func(u, v *node) *edge {
+		res := newEdge(u, v)
+		res.kind = kEnd
+		return res
+	}
 	newWildEdge := func(u, v *node) *edge {
 		res := newEdge(u, v)
 		res.kind = kWild
@@ -340,6 +352,7 @@ func gen(out *bufio.Writer, x *rule) {
 		}
 		return
 	}
+	isNested := false
 	var pre func() (start, end *node)
 	pterm := func() (start, end *node) {
 		if len(s) == pos || s[pos] == '|' {
@@ -351,16 +364,30 @@ func gen(out *bufio.Writer, x *rule) {
 		case '*', '+', '?':
 			panic(ErrBareClosure)
 		case ')':
-      panic(ErrUnmatchedRpar)
+			if !isNested {
+				panic(ErrUnmatchedRpar)
+			}
+			end = newNode()
+			start = end
+			return
 		case '(':
 			pos++
+			oldIsNested := isNested
+			isNested = true
 			start, end = pre()
+			isNested = oldIsNested
 			if len(s) == pos || ')' != s[pos] {
 				panic(ErrUnmatchedLpar)
 			}
 		case '.':
 			start, end = newNode(), newNode()
 			newWildEdge(start, end)
+		case '^':
+			start, end = newNode(), newNode()
+			newStartEdge(start, end)
+		case '$':
+			start, end = newNode(), newNode()
+			newEndEdge(start, end)
 		case ']':
 			panic(ErrUnmatchedRbkt)
 		case '[':
@@ -421,7 +448,7 @@ func gen(out *bufio.Writer, x *rule) {
 	}
 	pre = func() (start, end *node) {
 		start, end = pcat()
-		for pos < len(s) {
+		for pos < len(s) && s[pos] != ')' {
 			if s[pos] != '|' {
 				panic(ErrInternal)
 			}
@@ -536,6 +563,17 @@ func gen(out *bufio.Writer, x *rule) {
 		}
 		return node
 	}
+	getcb := func(v *node, cb func(*edge) bool) *node {
+		states := make([]bool, n)
+		for _, i := range v.set {
+			for _, e := range short[i].e {
+				if cb(e) {
+					states[e.dst.n] = true
+				}
+			}
+		}
+		return get(states)
+	}
 	states := make([]bool, n)
 	// The DFA start state is the state representing the nil-closure of the start
 	// node in the NFA. Recall it has index 0.
@@ -546,45 +584,28 @@ func gen(out *bufio.Writer, x *rule) {
 		todo = todo[0 : len(todo)-1]
 		// Singles.
 		for r, _ := range sing {
-			states := make([]bool, n)
-			for _, i := range v.set {
-				for _, e := range short[i].e {
-					if e.kind == kRune && e.r == r {
-						states[e.dst.n] = true
-					} else if e.kind == kWild {
-						states[e.dst.n] = true
-					} else if e.kind == kClass && e.negate != inClass(r, e.lim) {
-						states[e.dst.n] = true
-					}
-				}
-			}
-			newRuneEdge(v, get(states), r)
+			newRuneEdge(v, getcb(v, func(e *edge) bool {
+				return e.kind == kRune && e.r == r ||
+					e.kind == kWild ||
+					e.kind == kClass && e.negate != inClass(r, e.lim)
+			}), r)
 		}
 		// Character ranges.
 		for j := 0; j < len(lim); j += 2 {
-			states := make([]bool, n)
-			for _, i := range v.set {
-				for _, e := range short[i].e {
-					if e.kind == kWild {
-						states[e.dst.n] = true
-					} else if e.kind == kClass && e.negate != inClass(lim[j], e.lim) {
-						states[e.dst.n] = true
-					}
-				}
-			}
-			e := newClassEdge(v, get(states))
+			e := newClassEdge(v, getcb(v, func(e *edge) bool {
+				return e.kind == kWild ||
+					e.kind == kClass && e.negate != inClass(lim[j], e.lim)
+			}))
+
 			e.lim = append(e.lim, lim[j], lim[j+1])
 		}
 		// Wild.
-		states := make([]bool, n)
-		for _, i := range v.set {
-			for _, e := range short[i].e {
-				if e.kind == kWild || (e.kind == kClass && e.negate) {
-					states[e.dst.n] = true
-				}
-			}
-		}
-		newWildEdge(v, get(states))
+		newWildEdge(v, getcb(v, func(e *edge) bool {
+			return e.kind == kWild || (e.kind == kClass && e.negate)
+		}))
+		// ^ and $.
+		newStartEdge(v, getcb(v, func(e *edge) bool { return e.kind == kStart }))
+		newEndEdge(v, getcb(v, func(e *edge) bool { return e.kind == kEnd }))
 	}
 	n = dfacount
 
@@ -612,8 +633,7 @@ func gen(out *bufio.Writer, x *rule) {
 			out.WriteString("false")
 		}
 	}
-	out.WriteString("}, []func(rune) int{\n")
-
+	out.WriteString("}, []func(rune) int{  // Transitions\n")
 	for _, v := range sorted {
 		out.WriteString("func(r rune) int {\n")
 		var runeCases, classCases string
@@ -637,6 +657,17 @@ func gen(out *bufio.Writer, x *rule) {
 			out.WriteString("\tswitch {\n" + classCases + "\t}\n")
 		}
 		fmt.Fprintf(out, "\treturn %v\n},\n", wildDest)
+	}
+	out.WriteString("}, []int{  /* End-of-input transitions */ ")
+	for _, v := range sorted {
+		s := " -1,"
+		for _, e := range v.e {
+			if e.kind == kEnd {
+				s = fmt.Sprintf(" %d,", e.dst.n)
+				break
+			}
+		}
+		out.WriteString(s)
 	}
 	out.WriteString("},")
 	if len(x.kid) == 0 {
@@ -865,25 +896,22 @@ func NewLexer(in io.Reader) *Lexer {
   type dfa struct {
     acc []bool  // Accepting states.
     f []func(rune) int  // Transitions.
+    endf []int  // Transitions at end of input.
     nest []dfa
   }
   yylex := new(Lexer)
   yylex.ch = make(chan intstring)
   var scan func(in *bufio.Reader, ch chan intstring, family []dfa)
   scan = func(in *bufio.Reader, ch chan intstring, family []dfa) {
-    matchi := 0  // Index of DFA with highest-precedence match so far.
-    matchn := 0  // Length of highest-precedence match so far.
+    // Index of DFA and length of highest-precedence match so far.
+    matchi, matchn := 0, -1
     var buf []rune
     n := 0
     atEOF := false
     state := make([]int, len(family))
     text := ""
     for {
-      if atEOF {
-        ch <- intstring{-1, text}
-        break
-      }
-      if n == len(buf) {
+      if n == len(buf) && !atEOF {
         r,_,err := in.ReadRune()
         switch err {
         case io.EOF: atEOF = true
@@ -892,6 +920,14 @@ func NewLexer(in io.Reader) *Lexer {
         }
       }
       jammed := true
+      checkAccept := func(i int) bool {
+        // Higher precedence match? DFAs are run in parallel, so matchn is at most len(buf), hence we may omit the length equality check.
+        if family[i].acc[state[i]] && (matchn < n || matchi > i) {
+          matchi, matchn = i, n
+          return true
+        }
+        return false
+      }
       if !atEOF {
         r := buf[n]
         n++
@@ -900,35 +936,49 @@ func NewLexer(in io.Reader) *Lexer {
           state[i] = x.f[state[i]](r)
           if -1 == state[i] { continue }
           jammed = false
-          // Higher precedence match? DFAs are run in parallel, so matchn is at most len(buf), hence we may omit the length equality check.
-          if x.acc[state[i]] && (matchn < n || matchi > i) {
-            matchi = i
-            matchn = n
+          checkAccept(i)
+        }
+      } else {
+dollar:  // Handle $.
+        for i, x := range family {
+          if -1 == state[i] { continue }
+          mark := make([]bool, len(x.endf))
+          for {
+            mark[state[i]] = true
+            state[i] = x.endf[state[i]]
+            if -1 == state[i] || mark[state[i]] { break }
+            if checkAccept(i) {
+              // Unlike before, we can break off the search. Now that we're at the end, there's no need to maintain state[].
+              break dollar
+            }
           }
         }
       }
 
       if jammed {
         // All DFAs stuck. Return last match if it exists, otherwise advance by one rune and restart all DFAs.
-        n = 0
-        state = make([]int, len(family))
-        if matchn == 0 {
-          if atEOF {  // Empty input.
-            ch <- intstring{-1, text}
+        if matchn == -1 {
+          if len(buf) == 0 {  // This can only happen at the end of input.
             break
           }
           buf = buf[1:]
         } else {
           text = string(buf[:matchn])
           buf = buf[matchn:]
-          matchn = 0
+          matchn = -1
           ch <- intstring{matchi, text}
           if len(family[matchi].nest) > 0 {
             scan(bufio.NewReader(strings.NewReader(text)), ch, family[matchi].nest)
           }
+          if atEOF {
+            break
+          }
         }
+        n = 0
+        state = make([]int, len(family))
       }
     }
+    ch <- intstring{-1, ""}
   }
   go scan(bufio.NewReader(in), yylex.ch, []dfa{`)
 	for _, kid := range root.kid {
