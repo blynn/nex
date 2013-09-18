@@ -19,11 +19,11 @@ import (
 )
 
 type rule struct {
-	regex             []rune
-	code              string
-	endCode           string
-	index int
-  kid []*rule
+	regex   []rune
+	code    string
+	endCode string
+	index   int
+	kid     []*rule
 }
 type Error string
 
@@ -597,30 +597,30 @@ func gen(out *bufio.Writer, x *rule) {
 		writeDotGraph(dfadot, dfastart, fmt.Sprintf("DFA_%v", x.index))
 	}
 	// DFA -> Go
-  sorted := make([]*node, n)
+	sorted := make([]*node, n)
 	for _, v := range tab {
 		if -1 != v.n {
-      sorted[v.n] = v
-    }
-  }
+			sorted[v.n] = v
+		}
+	}
 
-  fmt.Fprintf(out, "\n// %v\n", string(x.regex))
+	fmt.Fprintf(out, "\n// %v\n", string(x.regex))
 	for i, v := range sorted {
-    if i == 0 {
-      out.WriteString("{[]bool{")
-    } else {
-      out.WriteString(", ")
-    }
-    if v.accept {
-      out.WriteString("true")
-    } else {
-      out.WriteString("false")
-    }
-  }
-  out.WriteString("}, []func(rune) int{\n")
+		if i == 0 {
+			out.WriteString("{[]bool{")
+		} else {
+			out.WriteString(", ")
+		}
+		if v.accept {
+			out.WriteString("true")
+		} else {
+			out.WriteString("false")
+		}
+	}
+	out.WriteString("}, []func(rune) int{\n")
 
 	for _, v := range sorted {
-    out.WriteString("func(r rune) int {\n")
+		out.WriteString("func(r rune) int {\n")
 		var runeCases, classCases string
 		var wildDest int
 		for _, e := range v.e {
@@ -636,54 +636,66 @@ func gen(out *bufio.Writer, x *rule) {
 			}
 		}
 		if runeCases != "" {
-			out.WriteString("\tswitch(r) {\n"+runeCases+"\t}\n")
+			out.WriteString("\tswitch(r) {\n" + runeCases + "\t}\n")
 		}
 		if classCases != "" {
-			out.WriteString("\tswitch {\n"+classCases+"\t}\n")
+			out.WriteString("\tswitch {\n" + classCases + "\t}\n")
 		}
 		fmt.Fprintf(out, "\treturn %v\n},\n", wildDest)
 	}
-  out.WriteString("},")
-  if len(x.kid) == 0 {
-    out.WriteString("nil")
-  } else {
-    out.WriteString("[]dfa{")
-    for _, kid := range x.kid {
-      gen(out, kid)
-    }
-    out.WriteString("}")
-  }
-  out.WriteString("},\n")
+	out.WriteString("},")
+	if len(x.kid) == 0 {
+		out.WriteString("nil")
+	} else {
+		out.WriteString("[]dfa{")
+		for _, kid := range x.kid {
+			gen(out, kid)
+		}
+		out.WriteString("}")
+	}
+	out.WriteString("},\n")
 }
 
 var standalone, customError, autorun *bool
 
 func writeFamily(out *bufio.Writer, node *rule, lvl int) {
-  tab := func() {
-    for i := 0; i < lvl; i++ {
-      out.WriteByte('\t')
-    }
-  }
-  tab(); fmt.Fprintf(out, "for { switch yylex.next(%v) {\n", lvl)
-  for i, x := range node.kid {
-    tab(); fmt.Fprintf(out, "\tcase %d:  // %d\n", x.index, i)
-    lvl++
-    if x.kid != nil {
-      tab(); out.WriteString("\tif yylex.fresh {\n")
-      tab(); out.WriteString("\t\t" + x.code + "\n")
-      tab(); out.WriteString("\t}\n")
-      writeFamily(out, x, lvl)
-    } else {
-      tab(); out.WriteString("\t" + x.code + "\n")
-    }
-    tab(); out.WriteString("\tcontinue\n")
-    lvl--
-  }
-  tab(); out.WriteString("\t}\n")
-  tab(); out.WriteString("\tbreak\n")
-  tab(); out.WriteString("}\n")
-  tab(); out.WriteString("yylex.pop()\n")
-  tab(); out.WriteString(node.endCode + "\n")
+	tab := func() {
+		for i := 0; i < lvl; i++ {
+			out.WriteByte('\t')
+		}
+	}
+	tab()
+	fmt.Fprintf(out, "for { switch yylex.next(%v) {\n", lvl)
+	for i, x := range node.kid {
+		tab()
+		fmt.Fprintf(out, "\tcase %d:  // %d\n", x.index, i)
+		lvl++
+		if x.kid != nil {
+			tab()
+			out.WriteString("\tif yylex.fresh {\n")
+			tab()
+			out.WriteString("\t\t" + x.code + "\n")
+			tab()
+			out.WriteString("\t}\n")
+			writeFamily(out, x, lvl)
+		} else {
+			tab()
+			out.WriteString("\t" + x.code + "\n")
+		}
+		tab()
+		out.WriteString("\tcontinue\n")
+		lvl--
+	}
+	tab()
+	out.WriteString("\t}\n")
+	tab()
+	out.WriteString("\tbreak\n")
+	tab()
+	out.WriteString("}\n")
+	tab()
+	out.WriteString("yylex.pop()\n")
+	tab()
+	out.WriteString(node.endCode + "\n")
 }
 func writeLex(out *bufio.Writer, root rule) {
 	if !*customError {
@@ -692,12 +704,12 @@ func writeLex(out *bufio.Writer, root rule) {
 }`)
 	}
 	out.WriteString("\nfunc (yylex *Lexer) Lex(lval *yySymType) int {\n")
-  writeFamily(out, &root, 0)
+	writeFamily(out, &root, 0)
 	out.WriteString("\treturn 0\n}\n")
 }
 func writeNNFun(out *bufio.Writer, root rule) {
 	out.WriteString("func(yylex *Lexer) {\n")
-  writeFamily(out, &root, 0)
+	writeFamily(out, &root, 0)
 	out.WriteString("}")
 }
 func process(output io.Writer, input io.Reader) {
@@ -746,21 +758,21 @@ func process(output io.Writer, input io.Reader) {
 		}
 		return string(buf)
 	}
-  var root rule
-  family := 0
+	var root rule
+	family := 0
 	usercode := false
 	var parse func(*rule)
 	parse = func(node *rule) {
-    rulen := 0
-    newKid := func(index int) *rule {
-      kid := new(rule)
-      node.kid = append(node.kid, kid)
-      kid.index = index
-      return kid
-    }
+		rulen := 0
+		newKid := func(index int) *rule {
+			kid := new(rule)
+			node.kid = append(node.kid, kid)
+			kid.index = index
+			return kid
+		}
 		for {
 			if skipws() {
-        panic(ErrUnexpectedEOF)
+				panic(ErrUnexpectedEOF)
 			}
 			if '>' == r {
 				if node == &root {
@@ -776,7 +788,7 @@ func process(output io.Writer, input io.Reader) {
 			if read() {
 				panic(ErrUnexpectedEOF)
 			}
-      var regex []rune
+			var regex []rune
 			for {
 				if r == delim && (len(regex) == 0 || regex[len(regex)-1] != '\\') {
 					break
@@ -933,9 +945,9 @@ func NewLexer(in io.Reader) *Lexer {
     }
   }
   go scan(bufio.NewReader(in), yylex.ch, []dfa{`)
-  for _, kid := range root.kid {
-    gen(out, kid)
-  }
+	for _, kid := range root.kid {
+		gen(out, kid)
+	}
 	out.WriteString(`})
   return yylex
 }
@@ -1008,6 +1020,7 @@ func createDotFile(filename string) *os.File {
 }
 
 func main() {
+	outFilename := flag.String("o", "", `output file`)
 	standalone = flag.Bool("s", false, `standalone code; NN_FUN macro substitution, no Lex() method`)
 	customError = flag.Bool("e", false, `custom error func; no Error() method`)
 	autorun = flag.Bool("r", false, `run generated program`)
@@ -1039,7 +1052,11 @@ func main() {
 		dieErr(err, "nex")
 		defer infile.Close()
 		if !*autorun {
-			outfile, err = os.Create(basename + ".nn.go")
+			if *outFilename == "" {
+				outfile, err = os.Create(basename + ".nn.go")
+			} else {
+				outfile, err = os.Create(*outFilename)
+			}
 			dieErr(err, "nex")
 			defer outfile.Close()
 		}

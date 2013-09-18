@@ -1,6 +1,7 @@
 package nex
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -9,7 +10,14 @@ import (
 	"testing"
 )
 
-const nexBin = "./nex"
+var nexBin string
+
+func init() {
+	var err error
+	if nexBin, err = filepath.Abs("./nex"); err != nil {
+		panic(err)
+	}
+}
 
 func dieErr(t *testing.T, err error, s string) {
 	if err != nil {
@@ -30,15 +38,13 @@ func TestNexPlusYacc(t *testing.T) {
 		dieErr(t, err, s)
 	}
 	run("cp rp.nex rp.y " + tmpdir)
-	absNexBin, err := filepath.Abs(nexBin)
-	dieErr(t, err, "filepath.Abs")
 	wd, err := os.Getwd()
 	dieErr(t, err, "Getwd")
 	dieErr(t, os.Chdir(tmpdir), "Chdir")
 	defer func() {
 		dieErr(t, os.Chdir(wd), "Chdir")
 	}()
-	run(absNexBin + " rp.nex")
+	run(nexBin + " rp.nex")
 	run("go tool yacc rp.y")
 	run("go build y.go rp.nn.go")
 	cmd := exec.Command("./y")
@@ -60,84 +66,10 @@ func TestNexPrograms(t *testing.T) {
 	defer func() {
 		dieErr(t, os.RemoveAll(tmpdir), "RemoveAll")
 	}()
-	tmpnex := tmpdir + "/tmp.nex"
 
 	for _, x := range []struct {
-		// A newline at the beginning of the 'prog' field means the test Nex program
-		// is inline. Otherwise 'prog' is a filename containing the test program.
 		prog, in, out string
 	}{
-		// A partial match regex has no effect on an immediately following match.
-		{`
-/abcd/ { print("ABCD") }
-/\n/   { println() }
-//
-package main
-import "os"
-func main() {
-  NN_FUN(NewLexer(os.Stdin))
-}
-`, "abcd\nbabcd\naabcd\nabcabcd\n", "ABCD\nABCD\nABCD\nABCD\n"},
-
-		// Nested regex test. The simplistic parser means we must use commented
-    // braces to balance out quoted braces.
-		{`
-/a[bcd]*e/ < { print("[") }
-  /a/        { print("A") }
-  /bcd/ <    { print("(") }
-  /c/        { print("X") }
-  >          { print(")") }
-  /e/        { print("E") }
-  /ccc/ <    {
-    print("{")
-    // }  [balance out the quoted left brace]
-  }
-  /./        { print("?") }
-  >          {
-    // {  [balance out the quoted right brace]
-    print("}")
-  }
->            { print("]") }
-/\n/ { println() }
-/./ { print(".") }
-//
-package main
-import "os"
-func main() {
-  NN_FUN(NewLexer(os.Stdin))
-}
-`, "abcdeabcabcdabcdddcccbbbcde", "[A(X)E].......[A(X){???}(X)E]"},
-
-		// Exercise hyphens in character classes.
-		{`
-/[a-z-]*/ < { print("[") }
-  /[^-a-df-m]/ { print("0") }
-  /./       { print("1") }
->           { print("]") }
-/\n/ { println() }
-/./ { print(".") }
-//
-package main
-import "os"
-func main() {
-  NN_FUN(NewLexer(os.Stdin))
-}
-`, "-azb-ycx@d--w-e-", "[11011010].[1110101]"},
-
-		// Overlapping character classes.
-		{`
-/[a-e]+[d-h]+/ { print("0") }
-/[m-n]+[k-p]+[^k-r]+[o-p]+/ { print("1") }
-/./ { print(lex.Text()) }
-//
-package main
-import "os"
-func main() {
-  lex := NewLexer(os.Stdin)
-  NN_FUN(lex)
-}
-`, "abcdefghijmnopabcoq", "0ij1q"},
-
 		{"lc.nex", "no newline", "0 10\n"},
 		{"lc.nex", "one two three\nfour five six\n", "2 28\n"},
 
@@ -313,17 +245,108 @@ rect 11 12 16 17
 		{"peter2.nex", "###\n#\n####\n", "rect 1 4 1 2\nrect 1 2 2 3\nrect 1 5 3 4\n"},
 		{"u.nex", "١ + ٢ + ... + ١٨ = 一百五十三", "1 + 2 + ... + 18 = 153"},
 	} {
-		filename := x.prog
-		if filename[0] == '\n' {
-			ioutil.WriteFile(tmpnex, []byte(filename), 0777)
-			filename = tmpnex
-		}
-		cmd := exec.Command(nexBin, "-r", "-s", filename)
+		cmd := exec.Command(nexBin, "-r", "-s", x.prog)
 		cmd.Stdin = strings.NewReader(x.in)
 		got, err := cmd.CombinedOutput()
-		dieErr(t, err, x.prog + " " + string(got))
+		dieErr(t, err, x.prog+" "+string(got))
 		if string(got) != x.out {
 			t.Fatalf("program: %s\nwant %q, got %q", x.prog, x.out, string(got))
 		}
 	}
+}
+
+// To save time, we combine several test cases into a single nex program.
+func TestGiantProgram(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "nex")
+	dieErr(t, err, "TempDir")
+	wd, err := os.Getwd()
+	dieErr(t, err, "Getwd")
+	dieErr(t, os.Chdir(tmpdir), "Chdir")
+	defer func() {
+		dieErr(t, os.Chdir(wd), "Chdir")
+	}()
+	defer func() {
+		dieErr(t, os.RemoveAll(tmpdir), "RemoveAll")
+	}()
+	s := "package main\n"
+	body := ""
+	for i, x := range []struct {
+		prog, in, out string
+	}{
+		// A partial match regex has no effect on an immediately following match.
+		{`
+/abcd/ { *lval += "ABCD" }
+/\n/   { *lval += "\n" }
+`, "abcd\nbabcd\naabcd\nabcabcd\n", "ABCD\nABCD\nABCD\nABCD\n"},
+
+		// Nested regex test. The simplistic parser means we must use commented
+		// braces to balance out quoted braces.
+    // Sprinkle in a couple of return statements to check Lex() saves stack
+    // state correctly between calls.
+		{`
+/a[bcd]*e/ < { *lval += "[" }
+  /a/        { *lval += "A" }
+  /bcd/ <    { *lval += "(" }
+  /c/        { *lval += "X"; return 1 }
+  >          { *lval += ")" }
+  /e/        { *lval += "E" }
+  /ccc/ <    {
+    *lval += "{"
+    // }  [balance out the quoted left brace]
+  }
+  /./        { *lval += "?" }
+  >          {
+    // {  [balance out the quoted right brace]
+    *lval += "}"
+    return 2
+  }
+>            { *lval += "]" }
+/\n/ { *lval += "\n" }
+/./ { *lval += "." }
+`, "abcdeabcabcdabcdddcccbbbcde", "[A(X)E].......[A(X){???}(X)E]"},
+
+		// Exercise hyphens in character classes.
+		{`
+/[a-z-]*/ < { *lval += "[" }
+  /[^-a-df-m]/ { *lval += "0" }
+  /./       { *lval += "1" }
+>           { *lval += "]" }
+/\n/ { *lval += "\n" }
+/./ { *lval += "." }
+`, "-azb-ycx@d--w-e-", "[11011010].[1110101]"},
+
+		// Overlapping character classes.
+		{`
+/[a-e]+[d-h]+/ { *lval += "0" }
+/[m-n]+[k-p]+[^k-r]+[o-p]+/ { *lval += "1" }
+/./ { *(*string)(lval) += yylex.Text() }
+`, "abcdefghijmnopabcoq", "0ij1q"},
+	} {
+		id := fmt.Sprintf("%v", i)
+		s += `import "./nex_test` + id + "\"\n"
+		dieErr(t, os.Mkdir("nex_test"+id, 0777), "Mkdir")
+		dieErr(t, ioutil.WriteFile(id+".nex", []byte(x.prog+`//
+package nex_test`+id+`
+
+type yySymType string
+
+func Go() {
+  x := NewLexer(bufio.NewReader(strings.NewReader(`+"`"+x.in+"`"+`)))
+  lval := new(yySymType)
+  for x.Lex(lval) != 0 { }
+  s := string(*lval)
+  if s != `+"`"+x.out+"`"+`{
+    panic(`+"`"+x.prog+": want "+x.out+", got ` + s"+`)
+  }
+}
+`), 0777), "WriteFile")
+		_, err := exec.Command(nexBin, "-o", "nex_test"+id+"/tmp.go", id+".nex").CombinedOutput()
+		dieErr(t, err, "nex: "+s)
+		body += "nex_test" + id + ".Go()\n"
+	}
+	s += "func main() {\n" + body + "}\n"
+	err = ioutil.WriteFile("tmp.go", []byte(s), 0777)
+	dieErr(t, err, "WriteFile")
+	_, err = exec.Command("go", "run", "tmp.go").CombinedOutput()
+	dieErr(t, err, "go")
 }
