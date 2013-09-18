@@ -273,6 +273,14 @@ func TestGiantProgram(t *testing.T) {
 	for i, x := range []struct {
 		prog, in, out string
 	}{
+		// Patterns like awk's BEGIN and END.
+		{`
+<          { *lval += "[" }
+  /[0-9]*/ { *lval += "N" }
+  /;/      { *lval += ";" }
+  /./      { *lval += "." }
+>          { *lval += "]\n" }
+`, "abc 123 xyz;a1b2c3;42", "[....N....;.N.N.N;N]\n"},
 		// A partial match regex has no effect on an immediately following match.
 		{`
 /abcd/ { *lval += "ABCD" }

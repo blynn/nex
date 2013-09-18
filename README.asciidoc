@@ -385,6 +385,45 @@ fine, provided the parser and the lexer are both in the same package.
 Alternatively, we could use yacc's `-p` option to change the prefix from `yy`
 to one that begins with an uppercase letter.
 
+== Matching the beginning and end of input ==
+
+We can simulate awk's BEGIN and END blocks with a regex that matches the entire
+input:
+
+------------------------------------------
+/.*/ < { println("BEGIN") }
+  /a/  { println("a") }
+>      { println("END") }
+//
+package main
+import "os"
+func main() {
+  NN_FUN(NewLexer(os.Stdin))
+}
+------------------------------------------
+
+However, this causes Nex to read the entire input into memory. To solve
+this problem, Nex supports the following syntax:
+
+------------------------------------------
+<      { println("BEGIN") }
+  /a/  { println("a") }
+>      { println("END") }
+package main
+import "os"
+func main() {
+  NN_FUN(NewLexer(os.Stdin))
+}
+------------------------------------------
+
+In other words, if a bare '<' appears as the first pattern, then its action is
+executed before reading the input. The last pattern must be a bare '>', and its
+action is executed on end of input.
+
+Additionally, no empty regex is needed to mark the beginning of the Go program.
+(Fortunately, an empty regex is also a Go comment, so there's no harm done if
+present.)
+
 == TODO ==
 
 ^ and $.

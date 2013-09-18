@@ -19,11 +19,12 @@ import (
 )
 
 type rule struct {
-	regex   []rune
-	code    string
-	endCode string
-	index   int
-	kid     []*rule
+	regex     []rune
+	code      string
+	startCode string
+	endCode   string
+	kid       []*rule
+	id        string
 }
 type Error string
 
@@ -43,6 +44,7 @@ var (
 	ErrUnmatchedLBrace     = Error("unmatched '{'")
 	ErrUnexpectedEOF       = Error("unexpected EOF")
 	ErrUnexpectedNewline   = Error("unexpected newline")
+	ErrUnexpectedLAngle    = Error("unexpected '<'")
 	ErrUnmatchedLAngle     = Error("unmatched '<'")
 	ErrUnmatchedRAngle     = Error("unmatched '>'")
 )
@@ -260,7 +262,6 @@ func gen(out *bufio.Writer, x *rule) {
 		res.lim = make([]rune, 0, 2)
 		return res
 	}
-	nlpar := 0
 	maybeEscape := func() rune {
 		c := s[pos]
 		if '\\' == c {
@@ -350,14 +351,8 @@ func gen(out *bufio.Writer, x *rule) {
 		case '*', '+', '?':
 			panic(ErrBareClosure)
 		case ')':
-			if 0 == nlpar {
-				panic(ErrUnmatchedRpar)
-			}
-			end = newNode()
-			start = end
-			return
+      panic(ErrUnmatchedRpar)
 		case '(':
-			nlpar++
 			pos++
 			start, end = pre()
 			if len(s) == pos || ')' != s[pos] {
@@ -471,7 +466,7 @@ func gen(out *bufio.Writer, x *rule) {
 	n = len(short)
 
 	if nfadot != nil {
-		writeDotGraph(nfadot, start, fmt.Sprintf("NFA_%v", x.index))
+		writeDotGraph(nfadot, start, "NFA_"+x.id)
 	}
 
 	// NFA -> DFA
@@ -594,7 +589,7 @@ func gen(out *bufio.Writer, x *rule) {
 	n = dfacount
 
 	if dfadot != nil {
-		writeDotGraph(dfadot, dfastart, fmt.Sprintf("DFA_%v", x.index))
+		writeDotGraph(dfadot, dfastart, "DFA_"+x.id)
 	}
 	// DFA -> Go
 	sorted := make([]*node, n)
@@ -660,23 +655,25 @@ var standalone, customError, autorun *bool
 
 func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 	tab := func() {
-		for i := 0; i < lvl; i++ {
+		for i := 0; i <= lvl; i++ {
 			out.WriteByte('\t')
 		}
+	}
+	if node.startCode != "" {
+		tab()
+		out.WriteString("if !yylex.stale {\n")
+		tab()
+		out.WriteString("\t" + node.startCode + "\n")
+		tab()
+		out.WriteString("}\n")
 	}
 	tab()
 	fmt.Fprintf(out, "for { switch yylex.next(%v) {\n", lvl)
 	for i, x := range node.kid {
 		tab()
-		fmt.Fprintf(out, "\tcase %d:  // %d\n", x.index, i)
+		fmt.Fprintf(out, "\tcase %d:\n", i)
 		lvl++
 		if x.kid != nil {
-			tab()
-			out.WriteString("\tif yylex.fresh {\n")
-			tab()
-			out.WriteString("\t\t" + x.code + "\n")
-			tab()
-			out.WriteString("\t}\n")
 			writeFamily(out, x, lvl)
 		} else {
 			tab()
@@ -713,6 +710,7 @@ func writeNNFun(out *bufio.Writer, root rule) {
 	out.WriteString("}")
 }
 func process(output io.Writer, input io.Reader) {
+	lineno := 1
 	in := bufio.NewReader(input)
 	out := bufio.NewWriter(output)
 	var r rune
@@ -725,6 +723,9 @@ func process(output io.Writer, input io.Reader) {
 		if err != nil {
 			panic(err)
 		}
+		if r == '\n' {
+			lineno++
+		}
 		return false
 	}
 	skipws := func() bool {
@@ -734,6 +735,11 @@ func process(output io.Writer, input io.Reader) {
 			}
 		}
 		return true
+	}
+	panicIf := func(f func() bool, err Error) {
+		if f() {
+			panic(err)
+		}
 	}
 	var buf []rune
 	readCode := func() string {
@@ -759,35 +765,31 @@ func process(output io.Writer, input io.Reader) {
 		return string(buf)
 	}
 	var root rule
-	family := 0
-	usercode := false
+	needRootRAngle := false
 	var parse func(*rule)
 	parse = func(node *rule) {
-		rulen := 0
-		newKid := func(index int) *rule {
-			kid := new(rule)
-			node.kid = append(node.kid, kid)
-			kid.index = index
-			return kid
-		}
 		for {
-			if skipws() {
-				panic(ErrUnexpectedEOF)
-			}
-			if '>' == r {
+			panicIf(skipws, ErrUnexpectedEOF)
+			if '<' == r {
+				if node != &root || len(node.kid) > 0 {
+					panic(ErrUnexpectedLAngle)
+				}
+				panicIf(skipws, ErrUnexpectedEOF)
+				node.startCode = readCode()
+				needRootRAngle = true
+				continue
+			} else if '>' == r {
 				if node == &root {
-					panic(ErrUnmatchedRAngle)
+					if !needRootRAngle {
+						panic(ErrUnmatchedRAngle)
+					}
 				}
-				if skipws() {
-					panic(ErrUnexpectedEOF)
-				}
-				node.endCode += readCode()
+				panicIf(skipws, ErrUnexpectedEOF)
+				node.endCode = readCode()
 				return
 			}
 			delim := r
-			if read() {
-				panic(ErrUnexpectedEOF)
-			}
+			panicIf(read, ErrUnexpectedEOF)
 			var regex []rune
 			for {
 				if r == delim && (len(regex) == 0 || regex[len(regex)-1] != '\\') {
@@ -797,43 +799,27 @@ func process(output io.Writer, input io.Reader) {
 					panic(ErrUnexpectedNewline)
 				}
 				regex = append(regex, r)
-				if read() {
-					panic(ErrUnexpectedEOF)
-				}
+				panicIf(read, ErrUnexpectedEOF)
 			}
 			if "" == string(regex) {
-				usercode = true
 				break
 			}
-			if skipws() {
-				panic("last pattern lacks action")
-			}
-			x := newKid(rulen)
-			rulen++
+			panicIf(skipws, ErrUnexpectedEOF)
+			x := new(rule)
+			x.id = fmt.Sprintf("%d", lineno)
+			node.kid = append(node.kid, x)
 			x.regex = make([]rune, len(regex))
 			copy(x.regex, regex)
-			nested := false
 			if '<' == r {
-				if skipws() {
-					panic("'<' lacks action")
-				}
-				nested = true
-			}
-			x.code += readCode()
-			if nested {
+				panicIf(skipws, ErrUnexpectedEOF)
+				x.startCode = readCode()
 				parse(x)
+			} else {
+				x.code = readCode()
 			}
 		}
-		if 0 != family {
-			panic(ErrUnmatchedLAngle)
-		}
-		node.endCode = "// [END]\n"
 	}
 	parse(&root)
-
-	if !usercode {
-		return
-	}
 
 	buf = nil
 	for done := skipws(); !done; done = read() {
@@ -873,7 +859,7 @@ type Lexer struct {
   // we're simulating a coroutine.
   // TODO: Support a channel-based variant that compatible with Go's yacc.
   stack []intstring
-  fresh bool
+  stale bool
 }
 func NewLexer(in io.Reader) *Lexer {
   type dfa struct {
@@ -961,9 +947,9 @@ func (yylex *Lexer) next(lvl int) int {
   if lvl == len(yylex.stack) - 1 {
     p := &yylex.stack[lvl]
     *p = <-yylex.ch
-    yylex.fresh = true
+    yylex.stale = false
   } else {
-    yylex.fresh = false
+    yylex.stale = true
   }
   return yylex.stack[lvl].i
 }
