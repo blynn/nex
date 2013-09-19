@@ -283,6 +283,34 @@ func TestGiantProgram(t *testing.T) {
 >           { *lval += "]" }
 `, "a b c d e f g aaab aaaa eeeg fffe quxqux quxq quxe",
 "[0][.][.][.][1][1][.][.][0][.][1][2][2][21]"},
+		// Exercise ^ and rule precedence.
+		{`
+/[a-z]*/ <  { *lval += "[" }
+  /((^*|^^)(^(^)^^^))^(^^^)*bar/ { *lval += "0" }
+  /(^foo)*/ { *lval += "1" }
+  /^fooo$/  { *lval += "2" }
+  /^f(oo)*/ { *lval += "3" }
+  /^foo*/   { *lval += "4" }
+  /^/       { *lval += "." }
+>           { *lval += "]" }
+`, "foo bar foooo fooo fooooo fooof baz foofoo",
+"[1][0][3][2][4][4][.][1]"},
+		// Anchored empty matches.
+		{`
+/^/ { *lval += "BEGIN" }
+/$/ { *lval += "END" }
+`, "", "BEGIN"},
+
+		{`
+/$/ { *lval += "END" }
+/^/ { *lval += "BEGIN" }
+`, "", "END"},
+
+		{`
+/^$/ { *lval += "BOTH" }
+/^/ { *lval += "BEGIN" }
+/$/ { *lval += "END" }
+`, "", "BOTH"},
 		// Patterns like awk's BEGIN and END.
 		{`
 <          { *lval += "[" }

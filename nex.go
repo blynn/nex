@@ -658,6 +658,17 @@ func gen(out *bufio.Writer, x *rule) {
 		}
 		fmt.Fprintf(out, "\treturn %v\n},\n", wildDest)
 	}
+	out.WriteString("}, []int{  /* Start-of-input transitions */ ")
+	for _, v := range sorted {
+		s := " -1,"
+		for _, e := range v.e {
+			if e.kind == kStart {
+				s = fmt.Sprintf(" %d,", e.dst.n)
+				break
+			}
+		}
+		out.WriteString(s)
+	}
 	out.WriteString("}, []int{  /* End-of-input transitions */ ")
 	for _, v := range sorted {
 		s := " -1,"
@@ -896,7 +907,7 @@ func NewLexer(in io.Reader) *Lexer {
   type dfa struct {
     acc []bool  // Accepting states.
     f []func(rune) int  // Transitions.
-    endf []int  // Transitions at end of input.
+    startf, endf []int  // Transitions at start and end of input.
     nest []dfa
   }
   yylex := new(Lexer)
@@ -907,9 +918,30 @@ func NewLexer(in io.Reader) *Lexer {
     matchi, matchn := 0, -1
     var buf []rune
     n := 0
+    checkAccept := func(i int, st int) bool {
+      // Higher precedence match? DFAs are run in parallel, so matchn is at most len(buf), hence we may omit the length equality check.
+      if family[i].acc[st] && (matchn < n || matchi > i) {
+        matchi, matchn = i, n
+        return true
+      }
+      return false
+    }
+    var state [][2]int
+    for i := 0; i < len(family); i++ {
+      mark := make([]bool, len(family[i].startf))
+      // Every DFA starts at state 0.
+      st := 0
+      for {
+        state = append(state, [2]int{i, st})
+        mark[st] = true
+        // As we're at the start of input, follow all ^ transitions and append to our list of start states.
+        st = family[i].startf[st]
+        if -1 == st || mark[st] { break }
+        // We only check for a match after at least one transition.
+        checkAccept(i, st)
+      }
+    }
     atEOF := false
-    state := make([]int, len(family))
-    text := ""
     for {
       if n == len(buf) && !atEOF {
         r,_,err := in.ReadRune()
@@ -919,43 +951,35 @@ func NewLexer(in io.Reader) *Lexer {
         default:     panic(err)
         }
       }
-      jammed := true
-      checkAccept := func(i int) bool {
-        // Higher precedence match? DFAs are run in parallel, so matchn is at most len(buf), hence we may omit the length equality check.
-        if family[i].acc[state[i]] && (matchn < n || matchi > i) {
-          matchi, matchn = i, n
-          return true
-        }
-        return false
-      }
       if !atEOF {
         r := buf[n]
         n++
-        for i, x := range family {
-          if -1 == state[i] { continue }
-          state[i] = x.f[state[i]](r)
-          if -1 == state[i] { continue }
-          jammed = false
-          checkAccept(i)
+        var nextState [][2]int
+        for _, x := range state {
+          x[1] = family[x[0]].f[x[1]](r)
+          if -1 == x[1] { continue }
+          nextState = append(nextState, x)
+          checkAccept(x[0], x[1])
         }
+        state = nextState
       } else {
 dollar:  // Handle $.
-        for i, x := range family {
-          if -1 == state[i] { continue }
-          mark := make([]bool, len(x.endf))
+        for _, x := range state {
+          mark := make([]bool, len(family[x[0]].endf))
           for {
-            mark[state[i]] = true
-            state[i] = x.endf[state[i]]
-            if -1 == state[i] || mark[state[i]] { break }
-            if checkAccept(i) {
-              // Unlike before, we can break off the search. Now that we're at the end, there's no need to maintain state[].
+            mark[x[1]] = true
+            x[1] = family[x[0]].endf[x[1]]
+            if -1 == x[1] || mark[x[1]] { break }
+            if checkAccept(x[0], x[1]) {
+              // Unlike before, we can break off the search. Now that we're at the end, there's no need to maintain the state of each DFA.
               break dollar
             }
           }
         }
+        state = nil
       }
 
-      if jammed {
+      if state == nil {
         // All DFAs stuck. Return last match if it exists, otherwise advance by one rune and restart all DFAs.
         if matchn == -1 {
           if len(buf) == 0 {  // This can only happen at the end of input.
@@ -963,7 +987,7 @@ dollar:  // Handle $.
           }
           buf = buf[1:]
         } else {
-          text = string(buf[:matchn])
+          text := string(buf[:matchn])
           buf = buf[matchn:]
           matchn = -1
           ch <- intstring{matchi, text}
@@ -975,7 +999,9 @@ dollar:  // Handle $.
           }
         }
         n = 0
-        state = make([]int, len(family))
+        for i := 0; i < len(family); i++ {
+          state = append(state, [2]int{i, 0})
+        }
       }
     }
     ch <- intstring{-1, ""}

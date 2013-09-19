@@ -423,3 +423,17 @@ action is executed on end of input.
 Additionally, no empty regex is needed to mark the beginning of the Go program.
 (Fortunately, an empty regex is also a Go comment, so there's no harm done if
 present.)
+
+== Matching Nuances ==
+
+Among rules in the same scope, the longest matching pattern takes precedence. In event of a tie, the first pattern wins.
+
+Unanchored patterns never match the empty string. For example,
+
+  /(foo)*/ {}
+
+matches "foo" and "foofoo", but not "".
+
+Anchored patterns can match the empty string at most once; after the match, the start or end null strings are "used up" so will not match again.
+
+Internally, this is implemented by omitting the very first check to see if the current state is accepted when running the DFA corresponding to the regex. An alternative would be to simply ignore matches of length 0, but I chose to allow anchored empty matches just in case there turn out to be applications for them. I'm open to changing this behaviour.
