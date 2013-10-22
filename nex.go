@@ -902,6 +902,10 @@ type Lexer struct {
   // TODO: Support a channel-based variant that compatible with Go's yacc.
   stack []intstring
   stale bool
+  // line number
+  l int 
+  // character position
+  c int
 }
 func NewLexer(in io.Reader) *Lexer {
   type dfa struct {
