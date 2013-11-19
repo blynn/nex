@@ -902,10 +902,14 @@ type Lexer struct {
   // TODO: Support a channel-based variant that compatible with Go's yacc.
   stack []intstring
   stale bool
-  // line number
-  l int 
-  // character position
-  c int
+
+  // TODO: The following fields were added for
+  // https://github.com/wagerlabs/docker/blob/65694e801a7b80930961d70c69cba9f2465459be/buildfile.nex
+  // In general, there are times when it would be convenient to maintain
+  // state in the Lexer object itself. Rather than adding fields for every
+  // possible nex application, it should be configurable, like the 'yyextra'
+  // field in Flex.
+  l, c int  // line number and character position
 }
 func NewLexer(in io.Reader) *Lexer {
   type dfa struct {
