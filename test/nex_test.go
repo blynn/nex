@@ -1,4 +1,4 @@
-package nex
+package main
 
 import (
 	"fmt"
@@ -13,10 +13,18 @@ import (
 var nexBin string
 
 func init() {
-	var err error
-	if nexBin, err = filepath.Abs("./nex"); err != nil {
-		panic(err)
-	}
+  var err error
+  if nexBin, err = filepath.Abs(os.Getenv("GOPATH") + "/bin/nex"); err != nil {
+    panic(err)
+  }
+  if _, err := os.Stat(nexBin); err != nil {
+    if nexBin, err = filepath.Abs("../nex"); err != nil {
+      panic(err)
+    }
+    if _, err := os.Stat(nexBin); err != nil {
+      panic("cannot find nex binary")
+    }
+  }
 }
 
 func dieErr(t *testing.T, err error, s string) {
