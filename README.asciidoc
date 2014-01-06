@@ -17,14 +17,10 @@ theory was enough to pass the exam.
 Go has a less general http://golang.org/pkg/scanner/[scanner package],
 but it is especially suited for tokenizing Go code.
 
-The source is in a Git repository:
+== Installation ==
 
-  $ git clone git://github.com/blynn/nex.git
-
-Mercurial users might want to use the http://hg-git.github.com/[hg-git plugin]:
-
-  $ sudo apt-get install mercurial-git
-  $ hg clone git://github.com/blynn/nex.git
+  $ export GOPATH=/tmp/go
+  $ go get github.com/blynn/nex
 
 == Example ==
 
@@ -49,14 +45,6 @@ The syntax resembles Awk more than Flex: each regex must be delimited. An empty
 regex terminates the rules section and signifies the presence of user code,
 which is printed on standard output with `NN_FUN` replaced by the generated
 scanner.
-
-=== Building nex ===
-
-Just run:
-
- $ go build nex.go
-
-=== Running nex ===
 
 Name the above example `lc.nex`. Then compile and run it by typing:
 
