@@ -868,7 +868,9 @@ func process(output io.Writer, input io.Reader) {
 		buf = append(buf, r)
 	}
 	fs := token.NewFileSet()
-	t, err := parser.ParseFile(fs, "", string(buf), parser.ImportsOnly)
+  // Append a blank line to make things easier when there are only package and
+  // import declarations.
+	t, err := parser.ParseFile(fs, "", string(buf) + "\n", parser.ImportsOnly)
 	if err != nil {
 		panic(err)
 	}
@@ -880,6 +882,8 @@ func process(output io.Writer, input io.Reader) {
 		return true
 	})
 
+  // Skip over package and import declarations. This is why we appended a blank
+  // line above.
 	for m := file.LineCount(); m > 1; m-- {
 		i := 0
 		for '\n' != buf[i] {
@@ -903,15 +907,17 @@ type Lexer struct {
   stack []intstring
   stale bool
 
-  // TODO: The following fields were added for
+  // The 'l' and 'c' fields were added for
   // https://github.com/wagerlabs/docker/blob/65694e801a7b80930961d70c69cba9f2465459be/buildfile.nex
-  // In general, there are times when it would be convenient to maintain
-  // state in the Lexer object itself. Rather than adding fields for every
-  // possible nex application, it should be configurable, like the 'yyextra'
-  // field in Flex.
   l, c int  // line number and character position
+  // The following line makes it easy for scripts to insert fields in the
+  // generated code.
+  // [NEX_END_OF_LEXER_STRUCT]
 }
-func NewLexer(in io.Reader) *Lexer {
+
+// NewLexerWithInit creates a new Lexer object, runs the given callback on it,
+// then returns it.
+func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
   type dfa struct {
     acc []bool  // Accepting states.
     f []func(rune) int  // Transitions.
@@ -919,6 +925,9 @@ func NewLexer(in io.Reader) *Lexer {
     nest []dfa
   }
   yylex := new(Lexer)
+  if initFun != nil {
+    initFun(yylex)
+  }
   yylex.ch = make(chan intstring)
   var scan func(in *bufio.Reader, ch chan intstring, family []dfa)
   scan = func(in *bufio.Reader, ch chan intstring, family []dfa) {
@@ -1020,6 +1029,9 @@ dollar:  // Handle $.
 	}
 	out.WriteString(`})
   return yylex
+}
+func NewLexer(in io.Reader) *Lexer {
+  return NewLexerWithInit(in, nil)
 }
 func (yylex *Lexer) Text() string {
   return yylex.stack[len(yylex.stack) - 1].s

@@ -7,12 +7,12 @@ Nex is a lexer similar to Lex/Flex that:
 - supports UTF-8
 - supports nested _structural regular expressions_.
 
-See ``http://doc.cat-v.org/bell_labs/structural_regexps/se.pdf[Structural
-Regular Expressions]'' by Rob Pike. I wrote this code to get acquainted with Go
+See http://doc.cat-v.org/bell_labs/structural_regexps/se.pdf[Structural
+Regular Expressions] by Rob Pike. I wrote this code to get acquainted with Go
 and also to explore some of the ideas in the paper. Also, I've always been
 meaning to implement algorithms I learned from a compilers course I took many
-years ago. Back then, we never needed to code them; merely understanding the
-theory was enough to pass the exam.
+years ago. Back then, we never coded them; merely understanding the theory was
+enough to pass the exam.
 
 Go has a less general http://golang.org/pkg/scanner/[scanner package],
 but it is especially suited for tokenizing Go code.
