@@ -1,0 +1,12 @@
+/[ \t\n]/     { /* Skip spaces and tabs. */ }
+/\/\/[^\n]*/  { /* Comments. */ }
+/[0-9]+(\.[0-9]+)?%/     { lval.s = yylex.Text(); return FRAC }
+/[a-zA-Z][0-9a-zA-Z]*\(/ { lval.s = yylex.Text(); return FUNC }
+/[0-9a-zA-Z]*/           { lval.s = yylex.Text(); return ID }
+/\[[:_0-9a-zA-Z,. -]*\]/         { lval.s = yylex.Text(); return XREF }
+/\$[0-9]*(\.[0-9][0-9])?/        { lval.s = yylex.Text(); return MONEY }
+/[0-9a-zA-Z][_0-9a-zA-Z,. -]*=/  { lval.s = yylex.Text(); return ASSIGN }
+/[0-9a-zA-Z][_0-9a-zA-Z,. -]*{/  { lval.s = yylex.Text(); return DEF_FORM }
+/./           { lval.s = yylex.Text(); return int(lval.s[0]) }
+//
+package main
