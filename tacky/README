@@ -1,0 +1,34 @@
+= Tacky =
+
+Tacky is a tool to help with US tax forms.
+See tacky_test.go for an example.
+
+The unconventional language is designed with US tax forms in mind, which
+contain instructions like:
+
+ 16: Subtract line 9 from line 4
+ 42: Enter Schedule X, line 53
+
+In Tacky, these are written:
+
+ 16 = 4 - 9
+ 42 = [Schedule X:53]
+
+Each line holds a monetary amount measured in cents. In particular, there is
+no support for integer or decimal constants.
+
+Although all quantities except percentages are measured in cents,
+mulitplication and division ignore this, and give their result in cents
+rather than cents squared or as a dimensionless quantity.
+
+These choices made implementation easier, but also makes certain
+instructions difficult to translate. For example, suppose we have:
+
+ 6: Ceiling of line 5 divided by $2500.
+ 7: Multiply line 6 by 2% (.02) and enter the result as a decimal.
+ 8: Multiply line 2 by line 7.
+
+Lines 6 and 7 are dimensionless, which Tacky does not support. To
+work around this, the three lines should be combined into one:
+
+ 8 = 2 * ((5 + $2500 - $0.01) / $2500) * 2%
