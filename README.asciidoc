@@ -90,7 +90,7 @@ need a throwaway definition of yySymType.
 
 == Toy Pascal ==
 
-The Flex manual also exhibits a ``http://flex.sourceforge.net/manual/Simple-Examples.html[scanner for a toy Pascal-like language]'',
+The Flex manual also exhibits a http://flex.sourceforge.net/manual/Simple-Examples.html[scanner for a toy Pascal-like language],
 though last I checked, its comment regex was a little buggy. Here is a
 modified Nex version, without string-to-number conversions:
 
