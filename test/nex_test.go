@@ -319,6 +319,17 @@ func TestGiantProgram(t *testing.T) {
 /^/ { *lval += "BEGIN" }
 /$/ { *lval += "END" }
 `, "", "BOTH"},
+		// Built-in Line and Column counters.
+    // Ugly hack to import fmt.
+		{`"fmt"
+/\*/    { *lval += yySymType(fmt.Sprintf("[%d,%d]", yylex.Line(), yylex.Column())) }
+`,
+`..*.
+**
+...
+...*.*
+*
+`, "[0,2][1,0][1,1][3,3][3,5][4,0]"},
 		// Patterns like awk's BEGIN and END.
 		{`
 <          { *lval += "[" }
@@ -379,8 +390,18 @@ func TestGiantProgram(t *testing.T) {
 		id := fmt.Sprintf("%v", i)
 		s += `import "./nex_test` + id + "\"\n"
 		dieErr(t, os.Mkdir("nex_test"+id, 0777), "Mkdir")
-		dieErr(t, ioutil.WriteFile(id+".nex", []byte(x.prog+`//
+    // Ugly hack to import packages.
+    prog := x.prog
+    importLine := ""
+    if prog[0] != '\n' {
+      v := strings.SplitN(prog, "\n", 2)
+      prog = v[1]
+      importLine = "import " + v[0]
+    }
+		dieErr(t, ioutil.WriteFile(id+".nex", []byte(prog+`//
 package nex_test`+id+`
+
+`+importLine+`
 
 type yySymType string
 

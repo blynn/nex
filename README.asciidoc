@@ -362,7 +362,7 @@ func main() {
 }
 ------------------------------------------
 
-Assuming you're using 6g and friends, compile the two with:
+Compile the two with:
 
  $ nex rp.nex && go tool yacc rp.y && go build y.go rp.nn.go
 
@@ -414,7 +414,8 @@ present.)
 
 == Matching Nuances ==
 
-Among rules in the same scope, the longest matching pattern takes precedence. In event of a tie, the first pattern wins.
+Among rules in the same scope, the longest matching pattern takes precedence.
+In event of a tie, the first pattern wins.
 
 Unanchored patterns never match the empty string. For example,
 
@@ -422,6 +423,43 @@ Unanchored patterns never match the empty string. For example,
 
 matches "foo" and "foofoo", but not "".
 
-Anchored patterns can match the empty string at most once; after the match, the start or end null strings are "used up" so will not match again.
+Anchored patterns can match the empty string at most once; after the match, the
+start or end null strings are "used up" so will not match again.
 
-Internally, this is implemented by omitting the very first check to see if the current state is accepted when running the DFA corresponding to the regex. An alternative would be to simply ignore matches of length 0, but I chose to allow anchored empty matches just in case there turn out to be applications for them. I'm open to changing this behaviour.
+Internally, this is implemented by omitting the very first check to see if the
+current state is accepted when running the DFA corresponding to the regex. An
+alternative would be to simply ignore matches of length 0, but I chose to allow
+anchored empty matches just in case there turn out to be applications for them.
+I'm open to changing this behaviour.
+
+== Testing ==
+
+Run:
+
+  $ go build nex.go
+  $ cd test
+  $ go test
+
+== Reference ==
+
+  func NewLexer(in io.Reader) *Lexer
+
+  // NewLexerWithInit creates a new Lexer object, runs the given callback on it,
+  // then returns it.
+  func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer
+
+  // Lex runs the lexer. Always returns 0.
+  // When the -s option is given, this function is not generated;
+  // instead, the NN_FUN macro runs the lexer.
+	func (yylex *Lexer) Lex(lval *yySymType) int
+
+  // Text returns the matched text.
+  func (yylex *Lexer) Text() string
+
+  // Line returns the current line number.
+  // The first line is 0.
+  func (yylex *Lexer) Line() int
+
+  // Column returns the current column number.
+  // The first column is 0.
+  func (yylex *Lexer) Column() int

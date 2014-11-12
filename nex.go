@@ -738,11 +738,17 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 }
 func writeLex(out *bufio.Writer, root rule) {
 	if !*customError {
+    // TODO: I can't remember what this was for!
 		out.WriteString(`func (yylex Lexer) Error(e string) {
   panic(e)
 }`)
 	}
-	out.WriteString("\nfunc (yylex *Lexer) Lex(lval *yySymType) int {\n")
+	out.WriteString(`
+// Lex runs the lexer. Always returns 0.
+// When the -s option is given, this function is not generated;
+// instead, the NN_FUN macro runs the lexer.
+func (yylex *Lexer) Lex(lval *yySymType) int {
+`)
 	writeFamily(out, &root, 0)
 	out.WriteString("\treturn 0\n}\n")
 }
@@ -893,23 +899,26 @@ func process(output io.Writer, input io.Reader) {
 	}
 
 	out.WriteString(`import ("bufio";"io";"strings")
-type intstring struct {
+type frame struct {
   i int
   s string
+  line, column int
 }
 type Lexer struct {
   // The lexer runs in its own goroutine, and communicates via channel 'ch'.
-  ch chan intstring
+  ch chan frame
   // We record the level of nesting because the action could return, and a
   // subsequent call expects to pick up where it left off. In other words,
   // we're simulating a coroutine.
   // TODO: Support a channel-based variant that compatible with Go's yacc.
-  stack []intstring
+  stack []frame
   stale bool
 
   // The 'l' and 'c' fields were added for
   // https://github.com/wagerlabs/docker/blob/65694e801a7b80930961d70c69cba9f2465459be/buildfile.nex
-  l, c int  // line number and character position
+  // Since then, I introduced the built-in Line() and Column() functions.
+  l, c int
+
   // The following line makes it easy for scripts to insert fields in the
   // generated code.
   // [NEX_END_OF_LEXER_STRUCT]
@@ -928,9 +937,9 @@ func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
   if initFun != nil {
     initFun(yylex)
   }
-  yylex.ch = make(chan intstring)
-  var scan func(in *bufio.Reader, ch chan intstring, family []dfa)
-  scan = func(in *bufio.Reader, ch chan intstring, family []dfa) {
+  yylex.ch = make(chan frame)
+  var scan func(in *bufio.Reader, ch chan frame, family []dfa, line, column int)
+  scan = func(in *bufio.Reader, ch chan frame, family []dfa, line, column int) {
     // Index of DFA and length of highest-precedence match so far.
     matchi, matchn := 0, -1
     var buf []rune
@@ -997,22 +1006,34 @@ dollar:  // Handle $.
       }
 
       if state == nil {
+        lcUpdate := func(r rune) {
+          if r == '\n' {
+            line++
+            column = 0
+          } else {
+            column++
+          }
+        }
         // All DFAs stuck. Return last match if it exists, otherwise advance by one rune and restart all DFAs.
         if matchn == -1 {
           if len(buf) == 0 {  // This can only happen at the end of input.
             break
           }
+          lcUpdate(buf[0])
           buf = buf[1:]
         } else {
           text := string(buf[:matchn])
           buf = buf[matchn:]
           matchn = -1
-          ch <- intstring{matchi, text}
+          ch <- frame{matchi, text, line, column}
           if len(family[matchi].nest) > 0 {
-            scan(bufio.NewReader(strings.NewReader(text)), ch, family[matchi].nest)
+            scan(bufio.NewReader(strings.NewReader(text)), ch, family[matchi].nest, line, column)
           }
           if atEOF {
             break
+          }
+          for _, r := range text {
+            lcUpdate(r)
           }
         }
         n = 0
@@ -1021,24 +1042,44 @@ dollar:  // Handle $.
         }
       }
     }
-    ch <- intstring{-1, ""}
+    ch <- frame{-1, "", line, column}
   }
   go scan(bufio.NewReader(in), yylex.ch, []dfa{`)
 	for _, kid := range root.kid {
 		gen(out, kid)
 	}
-	out.WriteString(`})
+	out.WriteString(`}, 0, 0)
   return yylex
 }
+
 func NewLexer(in io.Reader) *Lexer {
   return NewLexerWithInit(in, nil)
 }
+
+// Text returns the matched text.
 func (yylex *Lexer) Text() string {
   return yylex.stack[len(yylex.stack) - 1].s
 }
+
+// Line returns the current line number.
+// The first line is 0.
+func (yylex *Lexer) Line() int {
+  return yylex.stack[len(yylex.stack) - 1].line
+}
+
+// Column returns the current column number.
+// The first column is 0.
+func (yylex *Lexer) Column() int {
+  return yylex.stack[len(yylex.stack) - 1].column
+}
+
 func (yylex *Lexer) next(lvl int) int {
   if lvl == len(yylex.stack) {
-    yylex.stack = append(yylex.stack, intstring{0, ""})
+    l, c := 0, 0
+    if lvl > 0 {
+      l, c = yylex.stack[lvl - 1].line, yylex.stack[lvl - 1].column
+    }
+    yylex.stack = append(yylex.stack, frame{0, "", l, c})
   }
   if lvl == len(yylex.stack) - 1 {
     p := &yylex.stack[lvl]
