@@ -738,7 +738,7 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 }
 func writeLex(out *bufio.Writer, root rule) {
 	if !*customError {
-    // TODO: I can't remember what this was for!
+		// TODO: I can't remember what this was for!
 		out.WriteString(`func (yylex Lexer) Error(e string) {
   panic(e)
 }`)
@@ -874,9 +874,9 @@ func process(output io.Writer, input io.Reader) {
 		buf = append(buf, r)
 	}
 	fs := token.NewFileSet()
-  // Append a blank line to make things easier when there are only package and
-  // import declarations.
-	t, err := parser.ParseFile(fs, "", string(buf) + "\n", parser.ImportsOnly)
+	// Append a blank line to make things easier when there are only package and
+	// import declarations.
+	t, err := parser.ParseFile(fs, "", string(buf)+"\n", parser.ImportsOnly)
 	if err != nil {
 		panic(err)
 	}
@@ -888,8 +888,8 @@ func process(output io.Writer, input io.Reader) {
 		return true
 	})
 
-  // Skip over package and import declarations. This is why we appended a blank
-  // line above.
+	// Skip over package and import declarations. This is why we appended a blank
+	// line above.
 	for m := file.LineCount(); m > 1; m-- {
 		i := 0
 		for '\n' != buf[i] {
