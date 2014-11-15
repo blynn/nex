@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -87,10 +88,23 @@ type edge struct {
 	dst    *node  // Destination node.
 }
 type node struct {
-	e      []*edge // Outedges.
-	n      int     // Index number. Scoped to a family.
-	accept bool    // True if this is an accepting state.
-	set    []int   // The NFA nodes represented by a DFA node.
+	e      edges // Outedges.
+	n      int   // Index number. Scoped to a family.
+	accept bool  // True if this is an accepting state.
+	set    []int // The NFA nodes represented by a DFA node.
+}
+
+type edges []*edge
+
+func (e edges) Len() int {
+	return len(e)
+}
+func (e edges) Less(i, j int) bool {
+	return e[i].r < e[j].r
+}
+
+func (e edges) Swap(i, j int) {
+	e[i], e[j] = e[j], e[i]
 }
 
 // Print a graph in DOT format given the start node.
@@ -638,7 +652,10 @@ func gen(out *bufio.Writer, x *rule) {
 		out.WriteString("func(r rune) int {\n")
 		var runeCases, classCases string
 		var wildDest int
-		for _, e := range v.e {
+		var list edges
+		list = append(list, v.e...)
+		sort.Sort(list)
+		for _, e := range list {
 			m := e.dst.n
 			switch e.kind {
 			case kRune:
@@ -738,7 +755,7 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 }
 func writeLex(out *bufio.Writer, root rule) {
 	if !*customError {
-    // TODO: I can't remember what this was for!
+		// TODO: I can't remember what this was for!
 		out.WriteString(`func (yylex Lexer) Error(e string) {
   panic(e)
 }`)
@@ -874,9 +891,9 @@ func process(output io.Writer, input io.Reader) {
 		buf = append(buf, r)
 	}
 	fs := token.NewFileSet()
-  // Append a blank line to make things easier when there are only package and
-  // import declarations.
-	t, err := parser.ParseFile(fs, "", string(buf) + "\n", parser.ImportsOnly)
+	// Append a blank line to make things easier when there are only package and
+	// import declarations.
+	t, err := parser.ParseFile(fs, "", string(buf)+"\n", parser.ImportsOnly)
 	if err != nil {
 		panic(err)
 	}
@@ -888,8 +905,8 @@ func process(output io.Writer, input io.Reader) {
 		return true
 	})
 
-  // Skip over package and import declarations. This is why we appended a blank
-  // line above.
+	// Skip over package and import declarations. This is why we appended a blank
+	// line above.
 	for m := file.LineCount(); m > 1; m-- {
 		i := 0
 		for '\n' != buf[i] {
