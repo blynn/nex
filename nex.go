@@ -655,7 +655,7 @@ func gen(out *bufio.Writer, x *rule) {
 		var list edges
 		list = append(list, v.e...)
 		sort.Sort(list)
-		for _, e := range edges {
+		for _, e := range list {
 			m := e.dst.n
 			switch e.kind {
 			case kRune:
