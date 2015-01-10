@@ -727,6 +727,8 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 		out.WriteString("}\n")
 	}
 	tab()
+	fmt.Fprintf(out, "OUTER%s%d:\n", node.id, lvl)
+	tab()
 	fmt.Fprintf(out, "for { switch yylex.next(%v) {\n", lvl)
 	for i, x := range node.kid {
 		tab()
@@ -738,14 +740,16 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 			tab()
 			out.WriteString("\t" + x.code + "\n")
 		}
-		tab()
-		out.WriteString("\tcontinue\n")
 		lvl--
 	}
 	tab()
+	out.WriteString("\tdefault:\n")
+	tab()
+	fmt.Fprintf(out, "\t\t break OUTER%s%d\n", node.id, lvl)
+	tab()
 	out.WriteString("\t}\n")
 	tab()
-	out.WriteString("\tbreak\n")
+	out.WriteString("\tcontinue\n")
 	tab()
 	out.WriteString("}\n")
 	tab()
