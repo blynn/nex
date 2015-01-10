@@ -936,6 +936,8 @@ type Lexer struct {
   // Since then, I introduced the built-in Line() and Column() functions.
   l, c int
 
+  parseResult interface{}
+
   // The following line makes it easy for scripts to insert fields in the
   // generated code.
   // [NEX_END_OF_LEXER_STRUCT]
