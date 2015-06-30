@@ -13,18 +13,18 @@ import (
 var nexBin string
 
 func init() {
-  var err error
-  if nexBin, err = filepath.Abs(os.Getenv("GOPATH") + "/bin/nex"); err != nil {
-    panic(err)
-  }
-  if _, err := os.Stat(nexBin); err != nil {
-    if nexBin, err = filepath.Abs("../nex"); err != nil {
-      panic(err)
-    }
-    if _, err := os.Stat(nexBin); err != nil {
-      panic("cannot find nex binary")
-    }
-  }
+	var err error
+	if nexBin, err = filepath.Abs(os.Getenv("GOPATH") + "/bin/nex"); err != nil {
+		panic(err)
+	}
+	if _, err := os.Stat(nexBin); err != nil {
+		if nexBin, err = filepath.Abs("../nex"); err != nil {
+			panic(err)
+		}
+		if _, err := os.Stat(nexBin); err != nil {
+			panic("cannot find nex binary")
+		}
+	}
 }
 
 func dieErr(t *testing.T, err error, s string) {
@@ -290,7 +290,7 @@ func TestGiantProgram(t *testing.T) {
   /$/       { *lval += "." }
 >           { *lval += "]" }
 `, "a b c d e f g aaab aaaa eeeg fffe quxqux quxq quxe",
-"[0][.][.][.][1][1][.][.][0][.][1][2][2][21]"},
+			"[0][.][.][.][1][1][.][.][0][.][1][2][2][21]"},
 		// Exercise ^ and rule precedence.
 		{`
 /[a-z]*/ <  { *lval += "[" }
@@ -302,7 +302,7 @@ func TestGiantProgram(t *testing.T) {
   /^/       { *lval += "." }
 >           { *lval += "]" }
 `, "foo bar foooo fooo fooooo fooof baz foofoo",
-"[1][0][3][2][4][4][.][1]"},
+			"[1][0][3][2][4][4][.][1]"},
 		// Anchored empty matches.
 		{`
 /^/ { *lval += "BEGIN" }
@@ -320,11 +320,11 @@ func TestGiantProgram(t *testing.T) {
 /$/ { *lval += "END" }
 `, "", "BOTH"},
 		// Built-in Line and Column counters.
-    // Ugly hack to import fmt.
+		// Ugly hack to import fmt.
 		{`"fmt"
 /\*/    { *lval += yySymType(fmt.Sprintf("[%d,%d]", yylex.Line(), yylex.Column())) }
 `,
-`..*.
+			`..*.
 **
 ...
 ...*.*
@@ -390,14 +390,14 @@ func TestGiantProgram(t *testing.T) {
 		id := fmt.Sprintf("%v", i)
 		s += `import "./nex_test` + id + "\"\n"
 		dieErr(t, os.Mkdir("nex_test"+id, 0777), "Mkdir")
-    // Ugly hack to import packages.
-    prog := x.prog
-    importLine := ""
-    if prog[0] != '\n' {
-      v := strings.SplitN(prog, "\n", 2)
-      prog = v[1]
-      importLine = "import " + v[0]
-    }
+		// Ugly hack to import packages.
+		prog := x.prog
+		importLine := ""
+		if prog[0] != '\n' {
+			v := strings.SplitN(prog, "\n", 2)
+			prog = v[1]
+			importLine = "import " + v[0]
+		}
 		dieErr(t, ioutil.WriteFile(id+".nex", []byte(prog+`//
 package nex_test`+id+`
 
