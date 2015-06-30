@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -14,17 +15,22 @@ var nexBin string
 
 func init() {
 	var err error
-	if nexBin, err = filepath.Abs(os.Getenv("GOPATH") + "/bin/nex"); err != nil {
-		panic(err)
+	try := []string{
+		filepath.Join(os.Getenv("GOPATH"), "bin", "nex"),
+		filepath.Join("..", "nex"),
+		"nex", // look in all of PATH
 	}
-	if _, err := os.Stat(nexBin); err != nil {
-		if nexBin, err = filepath.Abs("../nex"); err != nil {
-			panic(err)
+	for _, path := range try {
+		if path, err = exec.LookPath(path); err != nil {
+			continue
 		}
-		if _, err := os.Stat(nexBin); err != nil {
-			panic("cannot find nex binary")
+		if path, err = filepath.Abs(path); err != nil {
+			panic(fmt.Sprintf("cannot get absolute path to nex binary: %s", err))
 		}
+		nexBin = path
+		return
 	}
+	panic("cannot find nex binary")
 }
 
 func dieErr(t *testing.T, err error, s string) {
@@ -45,7 +51,8 @@ func TestNexPlusYacc(t *testing.T) {
 		err := exec.Command(v[0], v[1:]...).Run()
 		dieErr(t, err, s)
 	}
-	run("cp rp.nex rp.y " + tmpdir)
+	dieErr(t, copyToDir(tmpdir, "rp.nex"), "copy rp.nex")
+	dieErr(t, copyToDir(tmpdir, "rp.y"), "copy rp.y")
 	wd, err := os.Getwd()
 	dieErr(t, err, "Getwd")
 	dieErr(t, os.Chdir(tmpdir), "Chdir")
@@ -415,8 +422,8 @@ func Go() {
   }
 }
 `), 0777), "WriteFile")
-		_, err := exec.Command(nexBin, "-o", "nex_test"+id+"/tmp.go", id+".nex").CombinedOutput()
-		dieErr(t, err, "nex: "+s)
+		_, cerr := exec.Command(nexBin, "-o", filepath.Join("nex_test"+id, "tmp.go"), id+".nex").CombinedOutput()
+		dieErr(t, cerr, "nex: "+s)
 		body += "nex_test" + id + ".Go()\n"
 	}
 	s += "func main() {\n" + body + "}\n"
@@ -424,4 +431,25 @@ func Go() {
 	dieErr(t, err, "WriteFile")
 	output, err := exec.Command("go", "run", "tmp.go").CombinedOutput()
 	dieErr(t, err, string(output))
+}
+
+func copy(dst, src string) error {
+	s, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	d, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(d, s); err != nil {
+		d.Close()
+		return err
+	}
+	return d.Close()
+}
+
+func copyToDir(dst, src string) error {
+	return copy(filepath.Join(dst, filepath.Base(src)), src)
 }
