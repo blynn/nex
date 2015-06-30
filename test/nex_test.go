@@ -271,10 +271,10 @@ func TestGiantProgram(t *testing.T) {
 	dieErr(t, err, "Getwd")
 	dieErr(t, os.Chdir(tmpdir), "Chdir")
 	defer func() {
-		dieErr(t, os.Chdir(wd), "Chdir")
+		dieErr(t, os.RemoveAll(tmpdir), "RemoveAll")
 	}()
 	defer func() {
-		dieErr(t, os.RemoveAll(tmpdir), "RemoveAll")
+		dieErr(t, os.Chdir(wd), "Chdir")
 	}()
 	s := "package main\n"
 	body := ""
