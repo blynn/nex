@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -13,18 +14,23 @@ import (
 var nexBin string
 
 func init() {
-  var err error
-  if nexBin, err = filepath.Abs(os.Getenv("GOPATH") + "/bin/nex"); err != nil {
-    panic(err)
-  }
-  if _, err := os.Stat(nexBin); err != nil {
-    if nexBin, err = filepath.Abs("../nex"); err != nil {
-      panic(err)
-    }
-    if _, err := os.Stat(nexBin); err != nil {
-      panic("cannot find nex binary")
-    }
-  }
+	var err error
+	try := []string{
+		filepath.Join(os.Getenv("GOPATH"), "bin", "nex"),
+		filepath.Join("..", "nex"),
+		"nex", // look in all of PATH
+	}
+	for _, path := range try {
+		if path, err = exec.LookPath(path); err != nil {
+			continue
+		}
+		if path, err = filepath.Abs(path); err != nil {
+			panic(fmt.Sprintf("cannot get absolute path to nex binary: %s", err))
+		}
+		nexBin = path
+		return
+	}
+	panic("cannot find nex binary")
 }
 
 func dieErr(t *testing.T, err error, s string) {
@@ -45,7 +51,8 @@ func TestNexPlusYacc(t *testing.T) {
 		err := exec.Command(v[0], v[1:]...).Run()
 		dieErr(t, err, s)
 	}
-	run("cp rp.nex rp.y " + tmpdir)
+	dieErr(t, copyToDir(tmpdir, "rp.nex"), "copy rp.nex")
+	dieErr(t, copyToDir(tmpdir, "rp.y"), "copy rp.y")
 	wd, err := os.Getwd()
 	dieErr(t, err, "Getwd")
 	dieErr(t, os.Chdir(tmpdir), "Chdir")
@@ -271,10 +278,10 @@ func TestGiantProgram(t *testing.T) {
 	dieErr(t, err, "Getwd")
 	dieErr(t, os.Chdir(tmpdir), "Chdir")
 	defer func() {
-		dieErr(t, os.Chdir(wd), "Chdir")
+		dieErr(t, os.RemoveAll(tmpdir), "RemoveAll")
 	}()
 	defer func() {
-		dieErr(t, os.RemoveAll(tmpdir), "RemoveAll")
+		dieErr(t, os.Chdir(wd), "Chdir")
 	}()
 	s := "package main\n"
 	body := ""
@@ -290,7 +297,7 @@ func TestGiantProgram(t *testing.T) {
   /$/       { *lval += "." }
 >           { *lval += "]" }
 `, "a b c d e f g aaab aaaa eeeg fffe quxqux quxq quxe",
-"[0][.][.][.][1][1][.][.][0][.][1][2][2][21]"},
+			"[0][.][.][.][1][1][.][.][0][.][1][2][2][21]"},
 		// Exercise ^ and rule precedence.
 		{`
 /[a-z]*/ <  { *lval += "[" }
@@ -302,7 +309,7 @@ func TestGiantProgram(t *testing.T) {
   /^/       { *lval += "." }
 >           { *lval += "]" }
 `, "foo bar foooo fooo fooooo fooof baz foofoo",
-"[1][0][3][2][4][4][.][1]"},
+			"[1][0][3][2][4][4][.][1]"},
 		// Anchored empty matches.
 		{`
 /^/ { *lval += "BEGIN" }
@@ -320,11 +327,11 @@ func TestGiantProgram(t *testing.T) {
 /$/ { *lval += "END" }
 `, "", "BOTH"},
 		// Built-in Line and Column counters.
-    // Ugly hack to import fmt.
+		// Ugly hack to import fmt.
 		{`"fmt"
 /\*/    { *lval += yySymType(fmt.Sprintf("[%d,%d]", yylex.Line(), yylex.Column())) }
 `,
-`..*.
+			`..*.
 **
 ...
 ...*.*
@@ -390,14 +397,14 @@ func TestGiantProgram(t *testing.T) {
 		id := fmt.Sprintf("%v", i)
 		s += `import "./nex_test` + id + "\"\n"
 		dieErr(t, os.Mkdir("nex_test"+id, 0777), "Mkdir")
-    // Ugly hack to import packages.
-    prog := x.prog
-    importLine := ""
-    if prog[0] != '\n' {
-      v := strings.SplitN(prog, "\n", 2)
-      prog = v[1]
-      importLine = "import " + v[0]
-    }
+		// Ugly hack to import packages.
+		prog := x.prog
+		importLine := ""
+		if prog[0] != '\n' {
+			v := strings.SplitN(prog, "\n", 2)
+			prog = v[1]
+			importLine = "import " + v[0]
+		}
 		dieErr(t, ioutil.WriteFile(id+".nex", []byte(prog+`//
 package nex_test`+id+`
 
@@ -415,8 +422,8 @@ func Go() {
   }
 }
 `), 0777), "WriteFile")
-		_, err := exec.Command(nexBin, "-o", "nex_test"+id+"/tmp.go", id+".nex").CombinedOutput()
-		dieErr(t, err, "nex: "+s)
+		_, cerr := exec.Command(nexBin, "-o", filepath.Join("nex_test"+id, "tmp.go"), id+".nex").CombinedOutput()
+		dieErr(t, cerr, "nex: "+s)
 		body += "nex_test" + id + ".Go()\n"
 	}
 	s += "func main() {\n" + body + "}\n"
@@ -424,4 +431,25 @@ func Go() {
 	dieErr(t, err, "WriteFile")
 	output, err := exec.Command("go", "run", "tmp.go").CombinedOutput()
 	dieErr(t, err, string(output))
+}
+
+func copy(dst, src string) error {
+	s, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	d, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(d, s); err != nil {
+		d.Close()
+		return err
+	}
+	return d.Close()
+}
+
+func copyToDir(dst, src string) error {
+	return copy(filepath.Join(dst, filepath.Base(src)), src)
 }
