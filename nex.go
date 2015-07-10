@@ -1093,6 +1093,9 @@ func (yylex *Lexer) Line() int {
 // Column returns the current column number.
 // The first column is 0.
 func (yylex *Lexer) Column() int {
+  if len(yylex.stack) == 0 {
+    return 0
+  }
   return yylex.stack[len(yylex.stack) - 1].column
 }
 
