@@ -1087,6 +1087,9 @@ func (yylex *Lexer) Text() string {
 // Line returns the current line number.
 // The first line is 0.
 func (yylex *Lexer) Line() int {
+  if len(yylex.stack) == 0 {
+    return 0
+  }
   return yylex.stack[len(yylex.stack) - 1].line
 }
 
