@@ -88,6 +88,10 @@ and must run `nex` without the `-s` option:
 We could avoid defining a struct by using globals instead, but even then we
 need a throwaway definition of yySymType.
 
+The yy prefix can be modified by adding `-y` option. When using yacc, it must use the same prefix:
+
+ $ nex -p YY lc.nex && go tool yacc -p YY && go run lc.nn.go y.go
+
 == Toy Pascal ==
 
 The Flex manual also exhibits a http://flex.sourceforge.net/manual/Simple-Examples.html[scanner for a toy Pascal-like language],
