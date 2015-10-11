@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	"strings"
 )
 import (
+	"go/format"
 	"go/parser"
 	"go/printer"
 	"go/token"
@@ -772,6 +774,7 @@ func writeNNFun(out *bufio.Writer, root rule) {
 	writeFamily(out, &root, 0)
 	out.WriteString("}")
 }
+
 func process(output io.Writer, input io.Reader) error {
 	lineno := 1
 	in := bufio.NewReader(input)
@@ -1122,6 +1125,9 @@ func (yylex *Lexer) pop() {
 		writeLex(out, root)
 		out.WriteString(string(buf))
 		out.Flush()
+		if len(outFilename) > 0 {
+			gofmt()
+		}
 		return nil
 	}
 	m := 0
@@ -1140,7 +1146,22 @@ func (yylex *Lexer) pop() {
 	}
 	out.WriteString(string(buf))
 	out.Flush()
+	if len(outFilename) > 0 {
+		gofmt()
+	}
 	return nil
+}
+
+func gofmt() {
+	src, err := ioutil.ReadFile(outFilename)
+	if err != nil {
+		return
+	}
+	src, err = format.Source(src)
+	if err != nil {
+		return
+	}
+	ioutil.WriteFile(outFilename, src, 0666)
 }
 
 func panicIf(f func() bool, err error) {
