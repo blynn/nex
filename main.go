@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -64,7 +65,10 @@ func main() {
 		dieErr(err, "nex")
 		defer outfile.Close()
 	}
-	process(outfile, infile)
+	err = process(outfile, infile)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if autorun {
 		c := exec.Command("go", "run", outfile.Name())
 		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr

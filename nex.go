@@ -3,6 +3,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -25,27 +26,24 @@ type rule struct {
 	kid       []*rule
 	id        string
 }
-type Error string
-
-func (e Error) String() string { return string(e) }
 
 var (
-	ErrInternal            = Error("internal error")
-	ErrUnmatchedLpar       = Error("unmatched '('")
-	ErrUnmatchedRpar       = Error("unmatched ')'")
-	ErrUnmatchedLbkt       = Error("unmatched '['")
-	ErrUnmatchedRbkt       = Error("unmatched ']'")
-	ErrBadRange            = Error("bad range in character class")
-	ErrExtraneousBackslash = Error("extraneous backslash")
-	ErrBareClosure         = Error("closure applies to nothing")
-	ErrBadBackslash        = Error("illegal backslash escape")
-	ErrExpectedLBrace      = Error("expected '{'")
-	ErrUnmatchedLBrace     = Error("unmatched '{'")
-	ErrUnexpectedEOF       = Error("unexpected EOF")
-	ErrUnexpectedNewline   = Error("unexpected newline")
-	ErrUnexpectedLAngle    = Error("unexpected '<'")
-	ErrUnmatchedLAngle     = Error("unmatched '<'")
-	ErrUnmatchedRAngle     = Error("unmatched '>'")
+	ErrInternal            = errors.New("internal error")
+	ErrUnmatchedLpar       = errors.New("unmatched '('")
+	ErrUnmatchedRpar       = errors.New("unmatched ')'")
+	ErrUnmatchedLbkt       = errors.New("unmatched '['")
+	ErrUnmatchedRbkt       = errors.New("unmatched ']'")
+	ErrBadRange            = errors.New("bad range in character class")
+	ErrExtraneousBackslash = errors.New("extraneous backslash")
+	ErrBareClosure         = errors.New("closure applies to nothing")
+	ErrBadBackslash        = errors.New("illegal backslash escape")
+	ErrExpectedLBrace      = errors.New("expected '{'")
+	ErrUnmatchedLBrace     = errors.New("unmatched '{'")
+	ErrUnexpectedEOF       = errors.New("unexpected EOF")
+	ErrUnexpectedNewline   = errors.New("unexpected newline")
+	ErrUnexpectedLAngle    = errors.New("unexpected '<'")
+	ErrUnmatchedLAngle     = errors.New("unmatched '<'")
+	ErrUnmatchedRAngle     = errors.New("unmatched '>'")
 )
 
 func ispunct(c rune) bool {
@@ -774,7 +772,7 @@ func writeNNFun(out *bufio.Writer, root rule) {
 	writeFamily(out, &root, 0)
 	out.WriteString("}")
 }
-func process(output io.Writer, input io.Reader) {
+func process(output io.Writer, input io.Reader) error {
 	lineno := 1
 	in := bufio.NewReader(input)
 	out := bufio.NewWriter(output)
@@ -801,11 +799,6 @@ func process(output io.Writer, input io.Reader) {
 		}
 		return true
 	}
-	panicIf := func(f func() bool, err Error) {
-		if f() {
-			panic(err)
-		}
-	}
 	var buf []rune
 	readCode := func() string {
 		if '{' != r {
@@ -831,8 +824,8 @@ func process(output io.Writer, input io.Reader) {
 	}
 	var root rule
 	needRootRAngle := false
-	var parse func(*rule)
-	parse = func(node *rule) {
+	var parse func(*rule) error
+	parse = func(node *rule) error {
 		for {
 			panicIf(skipws, ErrUnexpectedEOF)
 			if '<' == r {
@@ -849,9 +842,11 @@ func process(output io.Writer, input io.Reader) {
 						panic(ErrUnmatchedRAngle)
 					}
 				}
-				panicIf(skipws, ErrUnexpectedEOF)
+				if skipws() {
+					return ErrUnexpectedEOF
+				}
 				node.endCode = readCode()
-				return
+				return nil
 			}
 			delim := r
 			panicIf(read, ErrUnexpectedEOF)
@@ -861,7 +856,7 @@ func process(output io.Writer, input io.Reader) {
 					break
 				}
 				if '\n' == r {
-					panic(ErrUnexpectedNewline)
+					return ErrUnexpectedNewline
 				}
 				regex = append(regex, r)
 				panicIf(read, ErrUnexpectedEOF)
@@ -883,8 +878,12 @@ func process(output io.Writer, input io.Reader) {
 				x.code = readCode()
 			}
 		}
+		return nil
 	}
-	parse(&root)
+	err := parse(&root)
+	if err != nil {
+		return err
+	}
 
 	buf = nil
 	for done := skipws(); !done; done = read() {
@@ -1123,7 +1122,7 @@ func (yylex *Lexer) pop() {
 		writeLex(out, root)
 		out.WriteString(string(buf))
 		out.Flush()
-		return
+		return nil
 	}
 	m := 0
 	const funmac = "NN_FUN"
@@ -1141,6 +1140,13 @@ func (yylex *Lexer) pop() {
 	}
 	out.WriteString(string(buf))
 	out.Flush()
+	return nil
+}
+
+func panicIf(f func() bool, err error) {
+	if f() {
+		panic(err)
+	}
 }
 
 func dieIf(cond bool, v ...interface{}) {
