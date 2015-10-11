@@ -3,12 +3,10 @@ package main
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"log"
 	"os"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -710,8 +708,6 @@ func gen(out *bufio.Writer, x *rule) {
 	out.WriteString("},\n")
 }
 
-var standalone, customError, autorun *bool
-
 func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 	tab := func() {
 		for i := 0; i <= lvl; i++ {
@@ -758,7 +754,7 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 	out.WriteString(node.endCode + "\n")
 }
 func writeLex(out *bufio.Writer, root rule) {
-	if !*customError {
+	if !customError {
 		// TODO: I can't remember what this was for!
 		out.WriteString(`func (yylex Lexer) Error(e string) {
   panic(e)
@@ -1123,7 +1119,7 @@ func (yylex *Lexer) pop() {
   yylex.stack = yylex.stack[:len(yylex.stack) - 1]
 }
 `)
-	if !*standalone {
+	if !standalone {
 		writeLex(out, root)
 		out.WriteString(string(buf))
 		out.Flush()
@@ -1149,15 +1145,13 @@ func (yylex *Lexer) pop() {
 
 func dieIf(cond bool, v ...interface{}) {
 	if cond {
-		fmt.Println(v...)
-		os.Exit(1)
+		log.Fatal(v...)
 	}
 }
 
 func dieErr(err error, s string) {
 	if err != nil {
-		fmt.Printf("%v: %v", s, err)
-		os.Exit(1)
+		log.Fatalf("%v: %v", s, err)
 	}
 }
 
@@ -1165,68 +1159,9 @@ func createDotFile(filename string) *os.File {
 	if filename == "" {
 		return nil
 	}
-	dieIf(strings.HasSuffix(filename, ".nex"), "nex: DOT filename ends with .nex:", filename)
+	suf := strings.HasSuffix(filename, ".nex")
+	dieIf(suf, "nex: DOT filename ends with .nex:", filename)
 	file, err := os.Create(filename)
 	dieErr(err, "Create")
 	return file
-}
-
-func main() {
-	outFilename := flag.String("o", "", `output file`)
-	standalone = flag.Bool("s", false, `standalone code; NN_FUN macro substitution, no Lex() method`)
-	customError = flag.Bool("e", false, `custom error func; no Error() method`)
-	autorun = flag.Bool("r", false, `run generated program`)
-	nfadotFile := flag.String("nfadot", "", `show NFA graph in DOT format`)
-	dfadotFile := flag.String("dfadot", "", `show DFA graph in DOT format`)
-	flag.Parse()
-
-	nfadot = createDotFile(*nfadotFile)
-	dfadot = createDotFile(*dfadotFile)
-	defer func() {
-		if nfadot != nil {
-			dieErr(nfadot.Close(), "Close")
-		}
-		if dfadot != nil {
-			dieErr(dfadot.Close(), "Close")
-		}
-	}()
-	infile, outfile := os.Stdin, os.Stdout
-	var err error
-	if flag.NArg() > 0 {
-		dieIf(flag.NArg() > 1, "nex: extraneous arguments after", flag.Arg(0))
-		dieIf(strings.HasSuffix(flag.Arg(0), ".go"), "nex: input filename ends with .go:", flag.Arg(0))
-		basename := flag.Arg(0)
-		n := strings.LastIndex(basename, ".")
-		if n >= 0 {
-			basename = basename[:n]
-		}
-		infile, err = os.Open(flag.Arg(0))
-		dieErr(err, "nex")
-		defer infile.Close()
-		if !*autorun {
-			if *outFilename == "" {
-				outfile, err = os.Create(basename + ".nn.go")
-			} else {
-				outfile, err = os.Create(*outFilename)
-			}
-			dieErr(err, "nex")
-			defer outfile.Close()
-		}
-	}
-	if *autorun {
-		tmpdir, err := ioutil.TempDir("", "nex")
-		dieIf(err != nil, "tempdir:", err)
-		defer func() {
-			dieErr(os.RemoveAll(tmpdir), "RemoveAll")
-		}()
-		outfile, err = os.Create(tmpdir + "/lets.go")
-		dieErr(err, "nex")
-		defer outfile.Close()
-	}
-	process(outfile, infile)
-	if *autorun {
-		c := exec.Command("go", "run", outfile.Name())
-		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-		dieErr(c.Run(), "go run")
-	}
 }
