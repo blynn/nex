@@ -3,12 +3,11 @@ package main
 
 import (
 	"bufio"
-	"flag"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"log"
 	"os"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,27 +26,24 @@ type rule struct {
 	kid       []*rule
 	id        string
 }
-type Error string
-
-func (e Error) String() string { return string(e) }
 
 var (
-	ErrInternal            = Error("internal error")
-	ErrUnmatchedLpar       = Error("unmatched '('")
-	ErrUnmatchedRpar       = Error("unmatched ')'")
-	ErrUnmatchedLbkt       = Error("unmatched '['")
-	ErrUnmatchedRbkt       = Error("unmatched ']'")
-	ErrBadRange            = Error("bad range in character class")
-	ErrExtraneousBackslash = Error("extraneous backslash")
-	ErrBareClosure         = Error("closure applies to nothing")
-	ErrBadBackslash        = Error("illegal backslash escape")
-	ErrExpectedLBrace      = Error("expected '{'")
-	ErrUnmatchedLBrace     = Error("unmatched '{'")
-	ErrUnexpectedEOF       = Error("unexpected EOF")
-	ErrUnexpectedNewline   = Error("unexpected newline")
-	ErrUnexpectedLAngle    = Error("unexpected '<'")
-	ErrUnmatchedLAngle     = Error("unmatched '<'")
-	ErrUnmatchedRAngle     = Error("unmatched '>'")
+	ErrInternal            = errors.New("internal error")
+	ErrUnmatchedLpar       = errors.New("unmatched '('")
+	ErrUnmatchedRpar       = errors.New("unmatched ')'")
+	ErrUnmatchedLbkt       = errors.New("unmatched '['")
+	ErrUnmatchedRbkt       = errors.New("unmatched ']'")
+	ErrBadRange            = errors.New("bad range in character class")
+	ErrExtraneousBackslash = errors.New("extraneous backslash")
+	ErrBareClosure         = errors.New("closure applies to nothing")
+	ErrBadBackslash        = errors.New("illegal backslash escape")
+	ErrExpectedLBrace      = errors.New("expected '{'")
+	ErrUnmatchedLBrace     = errors.New("unmatched '{'")
+	ErrUnexpectedEOF       = errors.New("unexpected EOF")
+	ErrUnexpectedNewline   = errors.New("unexpected newline")
+	ErrUnexpectedLAngle    = errors.New("unexpected '<'")
+	ErrUnmatchedLAngle     = errors.New("unmatched '<'")
+	ErrUnmatchedRAngle     = errors.New("unmatched '>'")
 )
 
 func ispunct(c rune) bool {
@@ -710,8 +706,6 @@ func gen(out *bufio.Writer, x *rule) {
 	out.WriteString("},\n")
 }
 
-var standalone, customError, autorun *bool
-
 func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 	tab := func() {
 		for i := 0; i <= lvl; i++ {
@@ -758,7 +752,7 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 	out.WriteString(node.endCode + "\n")
 }
 func writeLex(out *bufio.Writer, root rule) {
-	if !*customError {
+	if !customError {
 		// TODO: I can't remember what this was for!
 		out.WriteString(`func (yylex Lexer) Error(e string) {
   panic(e)
@@ -778,7 +772,7 @@ func writeNNFun(out *bufio.Writer, root rule) {
 	writeFamily(out, &root, 0)
 	out.WriteString("}")
 }
-func process(output io.Writer, input io.Reader) {
+func process(output io.Writer, input io.Reader) error {
 	lineno := 1
 	in := bufio.NewReader(input)
 	out := bufio.NewWriter(output)
@@ -805,11 +799,6 @@ func process(output io.Writer, input io.Reader) {
 		}
 		return true
 	}
-	panicIf := func(f func() bool, err Error) {
-		if f() {
-			panic(err)
-		}
-	}
 	var buf []rune
 	readCode := func() string {
 		if '{' != r {
@@ -835,8 +824,8 @@ func process(output io.Writer, input io.Reader) {
 	}
 	var root rule
 	needRootRAngle := false
-	var parse func(*rule)
-	parse = func(node *rule) {
+	var parse func(*rule) error
+	parse = func(node *rule) error {
 		for {
 			panicIf(skipws, ErrUnexpectedEOF)
 			if '<' == r {
@@ -853,9 +842,11 @@ func process(output io.Writer, input io.Reader) {
 						panic(ErrUnmatchedRAngle)
 					}
 				}
-				panicIf(skipws, ErrUnexpectedEOF)
+				if skipws() {
+					return ErrUnexpectedEOF
+				}
 				node.endCode = readCode()
-				return
+				return nil
 			}
 			delim := r
 			panicIf(read, ErrUnexpectedEOF)
@@ -865,7 +856,7 @@ func process(output io.Writer, input io.Reader) {
 					break
 				}
 				if '\n' == r {
-					panic(ErrUnexpectedNewline)
+					return ErrUnexpectedNewline
 				}
 				regex = append(regex, r)
 				panicIf(read, ErrUnexpectedEOF)
@@ -887,8 +878,12 @@ func process(output io.Writer, input io.Reader) {
 				x.code = readCode()
 			}
 		}
+		return nil
 	}
-	parse(&root)
+	err := parse(&root)
+	if err != nil {
+		return err
+	}
 
 	buf = nil
 	for done := skipws(); !done; done = read() {
@@ -1123,11 +1118,11 @@ func (yylex *Lexer) pop() {
   yylex.stack = yylex.stack[:len(yylex.stack) - 1]
 }
 `)
-	if !*standalone {
+	if !standalone {
 		writeLex(out, root)
 		out.WriteString(string(buf))
 		out.Flush()
-		return
+		return nil
 	}
 	m := 0
 	const funmac = "NN_FUN"
@@ -1145,19 +1140,24 @@ func (yylex *Lexer) pop() {
 	}
 	out.WriteString(string(buf))
 	out.Flush()
+	return nil
+}
+
+func panicIf(f func() bool, err error) {
+	if f() {
+		panic(err)
+	}
 }
 
 func dieIf(cond bool, v ...interface{}) {
 	if cond {
-		fmt.Println(v...)
-		os.Exit(1)
+		log.Fatal(v...)
 	}
 }
 
 func dieErr(err error, s string) {
 	if err != nil {
-		fmt.Printf("%v: %v", s, err)
-		os.Exit(1)
+		log.Fatalf("%v: %v", s, err)
 	}
 }
 
@@ -1165,68 +1165,9 @@ func createDotFile(filename string) *os.File {
 	if filename == "" {
 		return nil
 	}
-	dieIf(strings.HasSuffix(filename, ".nex"), "nex: DOT filename ends with .nex:", filename)
+	suf := strings.HasSuffix(filename, ".nex")
+	dieIf(suf, "nex: DOT filename ends with .nex:", filename)
 	file, err := os.Create(filename)
 	dieErr(err, "Create")
 	return file
-}
-
-func main() {
-	outFilename := flag.String("o", "", `output file`)
-	standalone = flag.Bool("s", false, `standalone code; NN_FUN macro substitution, no Lex() method`)
-	customError = flag.Bool("e", false, `custom error func; no Error() method`)
-	autorun = flag.Bool("r", false, `run generated program`)
-	nfadotFile := flag.String("nfadot", "", `show NFA graph in DOT format`)
-	dfadotFile := flag.String("dfadot", "", `show DFA graph in DOT format`)
-	flag.Parse()
-
-	nfadot = createDotFile(*nfadotFile)
-	dfadot = createDotFile(*dfadotFile)
-	defer func() {
-		if nfadot != nil {
-			dieErr(nfadot.Close(), "Close")
-		}
-		if dfadot != nil {
-			dieErr(dfadot.Close(), "Close")
-		}
-	}()
-	infile, outfile := os.Stdin, os.Stdout
-	var err error
-	if flag.NArg() > 0 {
-		dieIf(flag.NArg() > 1, "nex: extraneous arguments after", flag.Arg(0))
-		dieIf(strings.HasSuffix(flag.Arg(0), ".go"), "nex: input filename ends with .go:", flag.Arg(0))
-		basename := flag.Arg(0)
-		n := strings.LastIndex(basename, ".")
-		if n >= 0 {
-			basename = basename[:n]
-		}
-		infile, err = os.Open(flag.Arg(0))
-		dieErr(err, "nex")
-		defer infile.Close()
-		if !*autorun {
-			if *outFilename == "" {
-				outfile, err = os.Create(basename + ".nn.go")
-			} else {
-				outfile, err = os.Create(*outFilename)
-			}
-			dieErr(err, "nex")
-			defer outfile.Close()
-		}
-	}
-	if *autorun {
-		tmpdir, err := ioutil.TempDir("", "nex")
-		dieIf(err != nil, "tempdir:", err)
-		defer func() {
-			dieErr(os.RemoveAll(tmpdir), "RemoveAll")
-		}()
-		outfile, err = os.Create(tmpdir + "/lets.go")
-		dieErr(err, "nex")
-		defer outfile.Close()
-	}
-	process(outfile, infile)
-	if *autorun {
-		c := exec.Command("go", "run", outfile.Name())
-		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-		dieErr(c.Run(), "go run")
-	}
 }
