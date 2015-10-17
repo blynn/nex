@@ -47,7 +47,8 @@ func main() {
 		defer infile.Close()
 		if !autorun {
 			if outFilename == "" {
-				outfile, err = os.Create(basename + ".nn.go")
+				outFilename = basename + ".nn.go"
+				outfile, err = os.Create(outFilename)
 			} else {
 				outfile, err = os.Create(outFilename)
 			}
