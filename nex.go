@@ -716,7 +716,7 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 	}
 	if node.startCode != "" {
 		tab()
-		out.WriteString("if !yylex.stale {\n")
+		prefixReplacer.WriteString(out, "if !yylex.stale {\n")
 		tab()
 		out.WriteString("\t" + node.startCode + "\n")
 		tab()
@@ -725,7 +725,8 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 	tab()
 	fmt.Fprintf(out, "OUTER%s%d:\n", node.id, lvl)
 	tab()
-	fmt.Fprintf(out, "for { switch yylex.next(%v) {\n", lvl)
+	prefixReplacer.WriteString(out,
+		fmt.Sprintf("for { switch yylex.next(%v) {\n", lvl))
 	for i, x := range node.kid {
 		tab()
 		fmt.Fprintf(out, "\tcase %d:\n", i)
@@ -749,175 +750,13 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 	tab()
 	out.WriteString("}\n")
 	tab()
-	out.WriteString("yylex.pop()\n")
+	prefixReplacer.WriteString(out, "yylex.pop()\n")
 	tab()
 	out.WriteString(node.endCode + "\n")
 }
-func writeLex(out *bufio.Writer, root rule) {
-	if !customError {
-		// TODO: I can't remember what this was for!
-		out.WriteString(`func (yylex Lexer) Error(e string) {
-  panic(e)
-}`)
-	}
-	out.WriteString(`
-// Lex runs the lexer. Always returns 0.
-// When the -s option is given, this function is not generated;
-// instead, the NN_FUN macro runs the lexer.
-func (yylex *Lexer) Lex(lval *yySymType) int {
-`)
-	writeFamily(out, &root, 0)
-	out.WriteString("\treturn 0\n}\n")
-}
-func writeNNFun(out *bufio.Writer, root rule) {
-	out.WriteString("func(yylex *Lexer) {\n")
-	writeFamily(out, &root, 0)
-	out.WriteString("}")
-}
 
-func process(output io.Writer, input io.Reader) error {
-	lineno := 1
-	in := bufio.NewReader(input)
-	out := bufio.NewWriter(output)
-	var r rune
-	read := func() bool {
-		var err error
-		r, _, err = in.ReadRune()
-		if err == io.EOF {
-			return true
-		}
-		if err != nil {
-			panic(err)
-		}
-		if r == '\n' {
-			lineno++
-		}
-		return false
-	}
-	skipws := func() bool {
-		for !read() {
-			if strings.IndexRune(" \n\t\r", r) == -1 {
-				return false
-			}
-		}
-		return true
-	}
-	var buf []rune
-	readCode := func() string {
-		if '{' != r {
-			panic(ErrExpectedLBrace)
-		}
-		buf = []rune{r}
-		nesting := 1
-		for {
-			if read() {
-				panic(ErrUnmatchedLBrace)
-			}
-			buf = append(buf, r)
-			if '{' == r {
-				nesting++
-			} else if '}' == r {
-				nesting--
-				if 0 == nesting {
-					break
-				}
-			}
-		}
-		return string(buf)
-	}
-	var root rule
-	needRootRAngle := false
-	var parse func(*rule) error
-	parse = func(node *rule) error {
-		for {
-			panicIf(skipws, ErrUnexpectedEOF)
-			if '<' == r {
-				if node != &root || len(node.kid) > 0 {
-					panic(ErrUnexpectedLAngle)
-				}
-				panicIf(skipws, ErrUnexpectedEOF)
-				node.startCode = readCode()
-				needRootRAngle = true
-				continue
-			} else if '>' == r {
-				if node == &root {
-					if !needRootRAngle {
-						panic(ErrUnmatchedRAngle)
-					}
-				}
-				if skipws() {
-					return ErrUnexpectedEOF
-				}
-				node.endCode = readCode()
-				return nil
-			}
-			delim := r
-			panicIf(read, ErrUnexpectedEOF)
-			var regex []rune
-			for {
-				if r == delim && (len(regex) == 0 || regex[len(regex)-1] != '\\') {
-					break
-				}
-				if '\n' == r {
-					return ErrUnexpectedNewline
-				}
-				regex = append(regex, r)
-				panicIf(read, ErrUnexpectedEOF)
-			}
-			if "" == string(regex) {
-				break
-			}
-			panicIf(skipws, ErrUnexpectedEOF)
-			x := new(rule)
-			x.id = fmt.Sprintf("%d", lineno)
-			node.kid = append(node.kid, x)
-			x.regex = make([]rune, len(regex))
-			copy(x.regex, regex)
-			if '<' == r {
-				panicIf(skipws, ErrUnexpectedEOF)
-				x.startCode = readCode()
-				parse(x)
-			} else {
-				x.code = readCode()
-			}
-		}
-		return nil
-	}
-	err := parse(&root)
-	if err != nil {
-		return err
-	}
 
-	buf = nil
-	for done := skipws(); !done; done = read() {
-		buf = append(buf, r)
-	}
-	fs := token.NewFileSet()
-	// Append a blank line to make things easier when there are only package and
-	// import declarations.
-	t, err := parser.ParseFile(fs, "", string(buf)+"\n", parser.ImportsOnly)
-	if err != nil {
-		panic(err)
-	}
-	printer.Fprint(out, fs, t)
-
-	var file *token.File
-	fs.Iterate(func(f *token.File) bool {
-		file = f
-		return true
-	})
-
-	// Skip over package and import declarations. This is why we appended a blank
-	// line above.
-	for m := file.LineCount(); m > 1; m-- {
-		i := 0
-		for '\n' != buf[i] {
-			i++
-		}
-		buf = buf[i+1:]
-	}
-
-	out.WriteString(`import ("bufio";"io";"strings")
+var lexertext = `import ("bufio";"io";"strings")
 type frame struct {
   i int
   s string
@@ -1065,11 +904,9 @@ dollar:  // Handle $.
     }
     ch <- frame{-1, "", line, column}
   }
-  go scan(bufio.NewReader(in), yylex.ch, []dfa{`)
-	for _, kid := range root.kid {
-		gen(out, kid)
-	}
-	out.WriteString(`}, 0, 0)
+  go scan(bufio.NewReader(in), yylex.ch, []dfa{`
+
+var lexeroutro = `}, 0, 0)
   return yylex
 }
 
@@ -1120,7 +957,177 @@ func (yylex *Lexer) next(lvl int) int {
 func (yylex *Lexer) pop() {
   yylex.stack = yylex.stack[:len(yylex.stack) - 1]
 }
+`
+
+func writeLex(out *bufio.Writer, root rule) {
+	if !customError {
+		// TODO: I can't remember what this was for!
+		prefixReplacer.WriteString(out, `func (yylex Lexer) Error(e string) {
+  panic(e)
+}`)
+	}
+	prefixReplacer.WriteString(out, `
+// Lex runs the lexer. Always returns 0.
+// When the -s option is given, this function is not generated;
+// instead, the NN_FUN macro runs the lexer.
+func (yylex *Lexer) Lex(lval *yySymType) int {
 `)
+	writeFamily(out, &root, 0)
+	out.WriteString("\treturn 0\n}\n")
+}
+func writeNNFun(out *bufio.Writer, root rule) {
+	prefixReplacer.WriteString(out, "func(yylex *Lexer) {\n")
+	writeFamily(out, &root, 0)
+	out.WriteString("}")
+}
+func process(output io.Writer, input io.Reader) error {
+	lineno := 1
+	in := bufio.NewReader(input)
+	out := bufio.NewWriter(output)
+	var r rune
+	read := func() bool {
+		var err error
+		r, _, err = in.ReadRune()
+		if err == io.EOF {
+			return true
+		}
+		if err != nil {
+			panic(err)
+		}
+		if r == '\n' {
+			lineno++
+		}
+		return false
+	}
+	skipws := func() bool {
+		for !read() {
+			if strings.IndexRune(" \n\t\r", r) == -1 {
+				return false
+			}
+		}
+		return true
+	}
+	var buf []rune
+	readCode := func() string {
+		if '{' != r {
+			panic(ErrExpectedLBrace)
+		}
+		buf = []rune{r}
+		nesting := 1
+		for {
+			if read() {
+				panic(ErrUnmatchedLBrace)
+			}
+			buf = append(buf, r)
+			if '{' == r {
+				nesting++
+			} else if '}' == r {
+				nesting--
+				if 0 == nesting {
+					break
+				}
+			}
+		}
+		return string(buf)
+	}
+	var root rule
+	needRootRAngle := false
+	var parse func(*rule) error
+	parse = func(node *rule) error {
+		for {
+			panicIf(skipws, ErrUnexpectedEOF)
+			if '<' == r {
+				if node != &root || len(node.kid) > 0 {
+					panic(ErrUnexpectedLAngle)
+				}
+				panicIf(skipws, ErrUnexpectedEOF)
+				node.startCode = readCode()
+				needRootRAngle = true
+				continue
+			} else if '>' == r {
+				if node == &root {
+					if !needRootRAngle {
+						panic(ErrUnmatchedRAngle)
+					}
+				}
+				if skipws() {
+					return ErrUnexpectedEOF
+				}
+				node.endCode = readCode()
+				return nil
+			}
+			delim := r
+			panicIf(read, ErrUnexpectedEOF)
+			var regex []rune
+			for {
+				if r == delim && (len(regex) == 0 || regex[len(regex)-1] != '\\') {
+					break
+				}
+				if '\n' == r {
+					return ErrUnexpectedNewline
+				}
+				regex = append(regex, r)
+				panicIf(read, ErrUnexpectedEOF)
+			}
+			if "" == string(regex) {
+				break
+			}
+			panicIf(skipws, ErrUnexpectedEOF)
+			x := new(rule)
+			x.id = fmt.Sprintf("%d", lineno)
+			node.kid = append(node.kid, x)
+			x.regex = make([]rune, len(regex))
+			copy(x.regex, regex)
+			if '<' == r {
+				panicIf(skipws, ErrUnexpectedEOF)
+				x.startCode = readCode()
+				parse(x)
+			} else {
+				x.code = readCode()
+			}
+		}
+		return nil
+	}
+	err := parse(&root)
+	if err != nil {
+		return err
+	}
+
+	buf = nil
+	for done := skipws(); !done; done = read() {
+		buf = append(buf, r)
+	}
+	fs := token.NewFileSet()
+	// Append a blank line to make things easier when there are only package and
+	// import declarations.
+	t, err := parser.ParseFile(fs, "", string(buf)+"\n", parser.ImportsOnly)
+	if err != nil {
+		panic(err)
+	}
+	printer.Fprint(out, fs, t)
+
+	var file *token.File
+	fs.Iterate(func(f *token.File) bool {
+		file = f
+		return true
+	})
+
+	// Skip over package and import declarations. This is why we appended a blank
+	// line above.
+	for m := file.LineCount(); m > 1; m-- {
+		i := 0
+		for '\n' != buf[i] {
+			i++
+		}
+		buf = buf[i+1:]
+	}
+
+	prefixReplacer.WriteString(out, lexertext)
+
+	for _, kid := range root.kid {
+		gen(out, kid)
+	}
+	prefixReplacer.WriteString(out, lexeroutro)
 	if !standalone {
 		writeLex(out, root)
 		out.WriteString(string(buf))

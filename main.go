@@ -12,8 +12,16 @@ import (
 var outFilename string
 var nfadotFile, dfadotFile string
 var autorun, standalone, customError bool
+var prefix string
+
+var prefixReplacer *strings.Replacer
+
+func init() {
+	prefixReplacer = strings.NewReplacer()
+}
 
 func main() {
+	flag.StringVar(&prefix, "p", "yy", "name prefix to use in generated code")
 	flag.StringVar(&outFilename, "o", "", `output file`)
 	flag.BoolVar(&standalone, "s", false, `standalone code; NN_FUN macro substitution, no Lex() method`)
 	flag.BoolVar(&customError, "e", false, `custom error func; no Error() method`)
@@ -21,6 +29,10 @@ func main() {
 	flag.StringVar(&nfadotFile, "nfadot", "", `show NFA graph in DOT format`)
 	flag.StringVar(&dfadotFile, "dfadot", "", `show DFA graph in DOT format`)
 	flag.Parse()
+
+	if len(prefix) > 0 {
+		prefixReplacer = strings.NewReplacer("yy", prefix)
+	}
 
 	nfadot = createDotFile(nfadotFile)
 	dfadot = createDotFile(dfadotFile)
