@@ -755,7 +755,6 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 	out.WriteString(node.endCode + "\n")
 }
 
-
 var lexertext = `import ("bufio";"io";"strings")
 type frame struct {
   i int
