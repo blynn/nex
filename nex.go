@@ -105,6 +105,12 @@ func (e edges) Swap(i, j int) {
 	e[i], e[j] = e[j], e[i]
 }
 
+type RuneSlice []rune
+
+func (p RuneSlice) Len() int           { return len(p) }
+func (p RuneSlice) Less(i, j int) bool { return p[i] < p[j] }
+func (p RuneSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+
 // Print a graph in DOT format given the start node.
 //
 //  $ dot -Tps input.dot -o output.ps
@@ -251,6 +257,7 @@ func gen(out *bufio.Writer, x *rule) {
 		res := new(edge)
 		res.dst = v
 		u.e = append(u.e, res)
+		sort.Sort(u.e)
 		return res
 	}
 	newStartEdge := func(u, v *node) *edge {
@@ -595,7 +602,12 @@ func gen(out *bufio.Writer, x *rule) {
 		v := todo[len(todo)-1]
 		todo = todo[0 : len(todo)-1]
 		// Singles.
+		var runes []rune
 		for r, _ := range sing {
+			runes = append(runes, r)
+		}
+		sort.Sort(RuneSlice(runes))
+		for _, r := range runes {
 			newRuneEdge(v, getcb(v, func(e *edge) bool {
 				return e.kind == kRune && e.r == r ||
 					e.kind == kWild ||
@@ -650,10 +662,7 @@ func gen(out *bufio.Writer, x *rule) {
 		out.WriteString("func(r rune) int {\n")
 		var runeCases, classCases string
 		var wildDest int
-		var list edges
-		list = append(list, v.e...)
-		sort.Sort(list)
-		for _, e := range list {
+		for _, e := range v.e {
 			m := e.dst.n
 			switch e.kind {
 			case kRune:
