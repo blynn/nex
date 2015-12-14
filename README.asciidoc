@@ -436,13 +436,15 @@ alternative would be to simply ignore matches of length 0, but I chose to allow
 anchored empty matches just in case there turn out to be applications for them.
 I'm open to changing this behaviour.
 
-== Testing ==
+== Contributing and Testing ==
 
-Run:
+Check out this repo (or a clone) into a directory with the following structure:
 
-  $ go build nex.go
-  $ cd test
-  $ go test
+  mkdir -p nex/src
+  cd nex/src
+  git clone https://github.com/blynn/nex.git
+
+The Makefile will put the binary into e.g. nex/bin
 
 == Reference ==
 
