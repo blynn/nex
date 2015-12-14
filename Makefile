@@ -4,12 +4,12 @@ export NEX        := $(abspath ../../bin/nex)
 all: $(NEX) test
 
 $(NEX): main.go nex.go
-	go fmt
+	go fmt nex
 	go install nex
 
 test: $(NEX) $(shell find test -type f)
-	go fmt nex/test
-	go test nex/test
+	go fmt nex nex/test
+	go test nex nex/test
 
 clean:
 	rm -f $(NEX)
