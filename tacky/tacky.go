@@ -239,7 +239,11 @@ func (tax *Tacky) Get(id string) int64 {
   line.cached = true
   line.n = tax.Eval(line.expr)
   if tax.curForm.wholeDollarsOnly {
-    line.n = (line.n + 50) / 100 * 100
+    if (line.n >= 0) {
+      line.n = (line.n + 50) / 100 * 100
+    } else {
+      line.n = (line.n - 50) / 100 * 100
+    }
   }
   return line.n
 }
