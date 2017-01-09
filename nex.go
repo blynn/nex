@@ -795,12 +795,6 @@ type Lexer struct {
 // NewLexerWithInit creates a new Lexer object, runs the given callback on it,
 // then returns it.
 func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
-  type dfa struct {
-    acc []bool  // Accepting states.
-    f []func(rune) int  // Transitions.
-    startf, endf []int  // Transitions at start and end of input.
-    nest []dfa
-  }
   yylex := new(Lexer)
   if initFun != nil {
     initFun(yylex)
@@ -912,11 +906,20 @@ dollar:  // Handle $.
     }
     ch <- frame{-1, "", line, column}
   }
-  go scan(bufio.NewReader(in), yylex.ch, []dfa{`
-
-var lexeroutro = `}, 0, 0)
+  go scan(bufio.NewReader(in), yylex.ch, dfas, 0, 0)
   return yylex
 }
+
+type dfa struct {
+  acc []bool  // Accepting states.
+  f []func(rune) int  // Transitions.
+  startf, endf []int  // Transitions at start and end of input.
+  nest []dfa
+}
+
+var dfas = []dfa{`
+
+var lexeroutro = `}
 
 func NewLexer(in io.Reader) *Lexer {
   return NewLexerWithInit(in, nil)
