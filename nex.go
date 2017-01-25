@@ -801,7 +801,7 @@ func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
     initFun(yylex)
   }
   yylex.ch = make(chan frame)
-  yylex.ch_stop = make(chan bool)
+  yylex.ch_stop = make(chan bool, 1)
   var scan func(in *bufio.Reader, ch chan frame, ch_stop chan bool, family []dfa, line, column int) 
   scan = func(in *bufio.Reader, ch chan frame, ch_stop chan bool, family []dfa, line, column int) {
     // Index of DFA and length of highest-precedence match so far.
