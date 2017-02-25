@@ -773,6 +773,7 @@ type frame struct {
 type Lexer struct {
   // The lexer runs in its own goroutine, and communicates via channel 'ch'.
   ch chan frame
+  ch_stop chan bool
   // We record the level of nesting because the action could return, and a
   // subsequent call expects to pick up where it left off. In other words,
   // we're simulating a coroutine.
@@ -800,8 +801,9 @@ func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
     initFun(yylex)
   }
   yylex.ch = make(chan frame)
-  var scan func(in *bufio.Reader, ch chan frame, family []dfa, line, column int)
-  scan = func(in *bufio.Reader, ch chan frame, family []dfa, line, column int) {
+  yylex.ch_stop = make(chan bool, 1)
+  var scan func(in *bufio.Reader, ch chan frame, ch_stop chan bool, family []dfa, line, column int) 
+  scan = func(in *bufio.Reader, ch chan frame, ch_stop chan bool, family []dfa, line, column int) {
     // Index of DFA and length of highest-precedence match so far.
     matchi, matchn := 0, -1
     var buf []rune
@@ -830,6 +832,7 @@ func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
       }
     }
     atEOF := false
+    stopped := false
     for {
       if n == len(buf) && !atEOF {
         r,_,err := in.ReadRune()
@@ -887,9 +890,27 @@ dollar:  // Handle $.
           text := string(buf[:matchn])
           buf = buf[matchn:]
           matchn = -1
-          ch <- frame{matchi, text, line, column}
+          for {
+            sent := false
+            select {
+              case ch <- frame{matchi, text, line, column}: {
+                sent = true
+              }
+              case stopped = <- ch_stop: {
+              }
+              default: {
+                // nothing
+              }
+            }
+            if stopped||sent {
+              break
+            }
+          }
+          if stopped {
+            break
+          }
           if len(family[matchi].nest) > 0 {
-            scan(bufio.NewReader(strings.NewReader(text)), ch, family[matchi].nest, line, column)
+            scan(bufio.NewReader(strings.NewReader(text)), ch, ch_stop, family[matchi].nest, line, column)
           }
           if atEOF {
             break
@@ -906,7 +927,7 @@ dollar:  // Handle $.
     }
     ch <- frame{-1, "", line, column}
   }
-  go scan(bufio.NewReader(in), yylex.ch, dfas, 0, 0)
+  go scan(bufio.NewReader(in), yylex.ch, yylex.ch_stop, dfas, 0, 0)
   return yylex
 }
 
@@ -923,6 +944,10 @@ var lexeroutro = `}
 
 func NewLexer(in io.Reader) *Lexer {
   return NewLexerWithInit(in, nil)
+}
+
+func (yyLex *Lexer) Stop() {
+  yyLex.ch_stop <- true
 }
 
 // Text returns the matched text.
