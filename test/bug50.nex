@@ -1,0 +1,23 @@
+/[ \t\n]/	{ /* skip over whitespace */ }
+/[a-z]([a-z0-9:]*[a-z0-9]+)?/
+		{
+			s := yylex.Text()
+			fmt.Printf("TEXT: %s\n", s)
+		}
+/#[^\n]*/
+		{
+			s := yylex.Text()
+			fmt.Printf("COMMENT: %s\n", s)
+		}
+/./		{
+			s := yylex.Text()
+			fmt.Printf("ERROR: %s\n", s)
+		}
+//
+package main
+import ("fmt";"os")
+type yySymType struct { l, c int }
+func main() {
+	lex := NewLexer(os.Stdin)
+	NN_FUN(lex)
+}
