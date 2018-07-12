@@ -442,6 +442,9 @@ func gen(out *bufio.Writer, x *rule) {
 			newNilEdge(end, nend)
 			end = nend
 		case '?':
+                        nstart := newNode()
+			newNilEdge(nstart, start)
+                        start = nstart
 			newNilEdge(start, end)
 		default:
 			return
