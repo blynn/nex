@@ -520,20 +520,20 @@ func gen(out *bufio.Writer, x *rule) {
 
 	// NFA -> DFA
 	nilClose := func(st []bool) {
-		mark := make([]bool, n)
+		visited := make([]bool, n)
 		var do func(int)
 		do = func(i int) {
+                        visited[i] = true
 			v := short[i]
 			for _, e := range v.e {
-				if e.kind == kNil && !mark[e.dst.n] {
+				if e.kind == kNil && !visited[e.dst.n] {
 					st[e.dst.n] = true
 					do(e.dst.n)
 				}
 			}
 		}
 		for i := 0; i < n; i++ {
-			if st[i] && !mark[i] {
-				mark[i] = true
+			if st[i] && !visited[i] {
 				do(i)
 			}
 		}
