@@ -259,6 +259,7 @@ rect 11 12 16 17
 `},
 		{"peter2.nex", "###\n#\n####\n", "rect 1 4 1 2\nrect 1 2 2 3\nrect 1 5 3 4\n"},
 		{"u.nex", "١ + ٢ + ... + ١٨ = 一百五十三", "1 + 2 + ... + 18 = 153"},
+		{"bug50.nex", "# comment 1\nhello42:\n# comment 2\n\na\nblah:42x\n", "COMMENT: # comment 1\nTEXT: hello42\nERROR: :\nCOMMENT: # comment 2\nTEXT: a\nTEXT: blah:42x\n"},
 	} {
 		cmd := exec.Command(nexBin, "-r", "-s", x.prog)
 		cmd.Stdin = strings.NewReader(x.in)
