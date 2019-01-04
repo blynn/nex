@@ -24,9 +24,8 @@ but it is especially suited for tokenizing Go code.
 
 == Example ==
 
-http://flex.sourceforge.net/manual/Simple-Examples.html[One simple example in
-the Flex manual] is a scanner that counts characters and lines. The program is
-similar in Nex:
+https://westes.github.io/flex/manual/Simple-Examples.html#Simple-Examples[One simple example in the Flex manual]
+is a scanner that counts characters and lines. The program is similar in Nex:
 
 ------------------------------------------
 /\n/{ nLines++; nChars++ }
@@ -88,13 +87,14 @@ and must run `nex` without the `-s` option:
 We could avoid defining a struct by using globals instead, but even then we
 need a throwaway definition of yySymType.
 
-The yy prefix can be modified by adding `-y` option. When using yacc, it must use the same prefix:
+The yy prefix can be modified by adding `-y` option. When using yacc, it must
+use the same prefix:
 
  $ nex -p YY lc.nex && go tool yacc -p YY && go run lc.nn.go y.go
 
 == Toy Pascal ==
 
-The Flex manual also exhibits a http://flex.sourceforge.net/manual/Simple-Examples.html[scanner for a toy Pascal-like language],
+The Flex manual also exhibits a https://westes.github.io/flex/manual/Simple-Examples.html#Simple-Examples[scanner for a toy Pascal-like language],
 though last I checked, its comment regex was a little buggy. Here is a
 modified Nex version, without string-to-number conversions:
 
