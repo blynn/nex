@@ -5,6 +5,10 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"go/format"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"io"
 	"io/ioutil"
 	"log"
@@ -12,12 +16,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-)
-import (
-	"go/format"
-	"go/parser"
-	"go/printer"
-	"go/token"
 )
 
 type rule struct {
@@ -442,9 +440,9 @@ func gen(out *bufio.Writer, x *rule) {
 			newNilEdge(end, nend)
 			end = nend
 		case '?':
-                        nstart := newNode()
+			nstart := newNode()
 			newNilEdge(nstart, start)
-                        start = nstart
+			start = nstart
 			newNilEdge(start, end)
 		default:
 			return
@@ -523,7 +521,7 @@ func gen(out *bufio.Writer, x *rule) {
 		visited := make([]bool, n)
 		var do func(int)
 		do = func(i int) {
-                        visited[i] = true
+			visited[i] = true
 			v := short[i]
 			for _, e := range v.e {
 				if e.kind == kNil && !visited[e.dst.n] {
@@ -835,7 +833,6 @@ func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
       }
     }
     atEOF := false
-    stopped := false
     for {
       if n == len(buf) && !atEOF {
         r,_,err := in.ReadRune()
@@ -893,25 +890,9 @@ dollar:  // Handle $.
           text := string(buf[:matchn])
           buf = buf[matchn:]
           matchn = -1
-          for {
-            sent := false
-            select {
-              case ch <- frame{matchi, text, line, column}: {
-                sent = true
-              }
-              case stopped = <- ch_stop: {
-              }
-              default: {
-                // nothing
-              }
-            }
-            if stopped||sent {
-              break
-            }
-          }
-          if stopped {
-            break
-          }
+       
+          ch <- frame{matchi, text, line, column}
+
           if len(family[matchi].nest) > 0 {
             scan(bufio.NewReader(strings.NewReader(text)), ch, ch_stop, family[matchi].nest, line, column)
           }
