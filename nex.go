@@ -442,9 +442,9 @@ func gen(out *bufio.Writer, x *rule) {
 			newNilEdge(end, nend)
 			end = nend
 		case '?':
-                        nstart := newNode()
+			nstart := newNode()
 			newNilEdge(nstart, start)
-                        start = nstart
+			start = nstart
 			newNilEdge(start, end)
 		default:
 			return
@@ -523,7 +523,7 @@ func gen(out *bufio.Writer, x *rule) {
 		visited := make([]bool, n)
 		var do func(int)
 		do = func(i int) {
-                        visited[i] = true
+			visited[i] = true
 			v := short[i]
 			for _, e := range v.e {
 				if e.kind == kNil && !visited[e.dst.n] {
@@ -735,10 +735,13 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 		out.WriteString("}\n")
 	}
 	tab()
-	fmt.Fprintf(out, "OUTER%s%d:\n", node.id, lvl)
+	out.WriteString("defer func() { _ = recover() }()\n")
 	tab()
-	prefixReplacer.WriteString(out,
-		fmt.Sprintf("for { switch yylex.next(%v) {\n", lvl))
+	prefixReplacer.WriteString(out, "yylex.scan(func(fr frame) {\n")
+	tab()
+	prefixReplacer.WriteString(out, "defer yylex.pop()\n")
+	tab()
+	prefixReplacer.WriteString(out, fmt.Sprintf("switch yylex.next(%v, fr) {\n", lvl))
 	for i, x := range node.kid {
 		tab()
 		fmt.Fprintf(out, "\tcase %d:\n", i)
@@ -754,17 +757,11 @@ func writeFamily(out *bufio.Writer, node *rule, lvl int) {
 	tab()
 	out.WriteString("\tdefault:\n")
 	tab()
-	fmt.Fprintf(out, "\t\t break OUTER%s%d\n", node.id, lvl)
+	fmt.Fprintf(out, "\t\t panic(\"exit %s%d\")\n", node.id, lvl)
 	tab()
 	out.WriteString("\t}\n")
 	tab()
-	out.WriteString("\tcontinue\n")
-	tab()
-	out.WriteString("}\n")
-	tab()
-	prefixReplacer.WriteString(out, "yylex.pop()\n")
-	tab()
-	out.WriteString(node.endCode + "\n")
+	out.WriteString("})\n")
 }
 
 var lexertext = `import ("bufio";"io";"strings")
@@ -774,13 +771,11 @@ type frame struct {
   line, column int
 }
 type Lexer struct {
-  // The lexer runs in its own goroutine, and communicates via channel 'ch'.
-  ch chan frame
-  ch_stop chan bool
+  // The lexer emits tokens through a supplied callback.
+  scan func(func(frame))
   // We record the level of nesting because the action could return, and a
   // subsequent call expects to pick up where it left off. In other words,
   // we're simulating a coroutine.
-  // TODO: Support a channel-based variant that compatible with Go's yacc.
   stack []frame
   stale bool
 
@@ -803,10 +798,8 @@ func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
   if initFun != nil {
     initFun(yylex)
   }
-  yylex.ch = make(chan frame)
-  yylex.ch_stop = make(chan bool, 1)
-  var scan func(in *bufio.Reader, ch chan frame, ch_stop chan bool, family []dfa, line, column int) 
-  scan = func(in *bufio.Reader, ch chan frame, ch_stop chan bool, family []dfa, line, column int) {
+  var scan func(in *bufio.Reader, f func(frame), family []dfa, line, column int)
+  scan = func(in *bufio.Reader, f func(frame), family []dfa, line, column int) {
     // Index of DFA and length of highest-precedence match so far.
     matchi, matchn := 0, -1
     var buf []rune
@@ -835,7 +828,6 @@ func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
       }
     }
     atEOF := false
-    stopped := false
     for {
       if n == len(buf) && !atEOF {
         r,_,err := in.ReadRune()
@@ -893,27 +885,9 @@ dollar:  // Handle $.
           text := string(buf[:matchn])
           buf = buf[matchn:]
           matchn = -1
-          for {
-            sent := false
-            select {
-              case ch <- frame{matchi, text, line, column}: {
-                sent = true
-              }
-              case stopped = <- ch_stop: {
-              }
-              default: {
-                // nothing
-              }
-            }
-            if stopped||sent {
-              break
-            }
-          }
-          if stopped {
-            break
-          }
+          f(frame{matchi, text, line, column})
           if len(family[matchi].nest) > 0 {
-            scan(bufio.NewReader(strings.NewReader(text)), ch, ch_stop, family[matchi].nest, line, column)
+            scan(bufio.NewReader(strings.NewReader(text)), f, family[matchi].nest, line, column)
           }
           if atEOF {
             break
@@ -928,9 +902,10 @@ dollar:  // Handle $.
         }
       }
     }
-    ch <- frame{-1, "", line, column}
   }
-  go scan(bufio.NewReader(in), yylex.ch, yylex.ch_stop, dfas, 0, 0)
+  yylex.scan = func(f func(frame)) {
+    scan(bufio.NewReader(in), f, dfas, 0, 0)
+  }
   return yylex
 }
 
@@ -947,10 +922,6 @@ var lexeroutro = `}
 
 func NewLexer(in io.Reader) *Lexer {
   return NewLexerWithInit(in, nil)
-}
-
-func (yyLex *Lexer) Stop() {
-  yyLex.ch_stop <- true
 }
 
 // Text returns the matched text.
@@ -976,7 +947,7 @@ func (yylex *Lexer) Column() int {
   return yylex.stack[len(yylex.stack) - 1].column
 }
 
-func (yylex *Lexer) next(lvl int) int {
+func (yylex *Lexer) next(lvl int, fr frame) int {
   if lvl == len(yylex.stack) {
     l, c := 0, 0
     if lvl > 0 {
@@ -986,7 +957,7 @@ func (yylex *Lexer) next(lvl int) int {
   }
   if lvl == len(yylex.stack) - 1 {
     p := &yylex.stack[lvl]
-    *p = <-yylex.ch
+    *p = fr
     yylex.stale = false
   } else {
     yylex.stale = true
