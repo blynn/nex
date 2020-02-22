@@ -901,9 +901,6 @@ dollar:  // Handle $.
               }
               case stopped = <- ch_stop: {
               }
-              default: {
-                // nothing
-              }
             }
             if stopped||sent {
               break
