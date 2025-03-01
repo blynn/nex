@@ -5,6 +5,10 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"go/format"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"io"
 	"io/ioutil"
 	"log"
@@ -12,12 +16,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-)
-import (
-	"go/format"
-	"go/parser"
-	"go/printer"
-	"go/token"
 )
 
 type rule struct {
@@ -113,7 +111,7 @@ func (p RuneSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 // Print a graph in DOT format given the start node.
 //
-//  $ dot -Tps input.dot -o output.ps
+//	$ dot -Tps input.dot -o output.ps
 func writeDotGraph(outf *os.File, start *node, id string) {
 	done := make(map[*node]bool)
 	var show func(*node)
@@ -442,9 +440,9 @@ func gen(out *bufio.Writer, x *rule) {
 			newNilEdge(end, nend)
 			end = nend
 		case '?':
-                        nstart := newNode()
+			nstart := newNode()
 			newNilEdge(nstart, start)
-                        start = nstart
+			start = nstart
 			newNilEdge(start, end)
 		default:
 			return
@@ -523,7 +521,7 @@ func gen(out *bufio.Writer, x *rule) {
 		visited := make([]bool, n)
 		var do func(int)
 		do = func(i int) {
-                        visited[i] = true
+			visited[i] = true
 			v := short[i]
 			for _, e := range v.e {
 				if e.kind == kNil && !visited[e.dst.n] {
@@ -773,23 +771,18 @@ type frame struct {
   s string
   line, column int
 }
+
+// Lexer is a generated lexer.
 type Lexer struct {
   // The lexer runs in its own goroutine, and communicates via channel 'ch'.
   ch chan frame
-  ch_stop chan bool
+  chStop chan bool
   // We record the level of nesting because the action could return, and a
   // subsequent call expects to pick up where it left off. In other words,
   // we're simulating a coroutine.
   // TODO: Support a channel-based variant that compatible with Go's yacc.
   stack []frame
   stale bool
-
-  // The 'l' and 'c' fields were added for
-  // https://github.com/wagerlabs/docker/blob/65694e801a7b80930961d70c69cba9f2465459be/buildfile.nex
-  // Since then, I introduced the built-in Line() and Column() functions.
-  l, c int
-
-  parseResult interface{}
 
   // The following line makes it easy for scripts to insert fields in the
   // generated code.
@@ -804,9 +797,9 @@ func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
     initFun(yylex)
   }
   yylex.ch = make(chan frame)
-  yylex.ch_stop = make(chan bool, 1)
-  var scan func(in *bufio.Reader, ch chan frame, ch_stop chan bool, family []dfa, line, column int) 
-  scan = func(in *bufio.Reader, ch chan frame, ch_stop chan bool, family []dfa, line, column int) {
+  yylex.chStop = make(chan bool, 1)
+  var scan func(in *bufio.Reader, ch chan frame, chStop chan bool, family []dfa, line, column int)
+  scan = func(in *bufio.Reader, ch chan frame, chStop chan bool, family []dfa, line, column int) {
     // Index of DFA and length of highest-precedence match so far.
     matchi, matchn := 0, -1
     var buf []rune
@@ -829,7 +822,7 @@ func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
         mark[st] = true
         // As we're at the start of input, follow all ^ transitions and append to our list of start states.
         st = family[i].startf[st]
-        if -1 == st || mark[st] { break }
+        if st == -1 || mark[st] { break }
         // We only check for a match after at least one transition.
         checkAccept(i, st)
       }
@@ -851,7 +844,7 @@ func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
         var nextState [][2]int
         for _, x := range state {
           x[1] = family[x[0]].f[x[1]](r)
-          if -1 == x[1] { continue }
+          if x[1] == -1 { continue }
           nextState = append(nextState, x)
           checkAccept(x[0], x[1])
         }
@@ -863,7 +856,7 @@ dollar:  // Handle $.
           for {
             mark[x[1]] = true
             x[1] = family[x[0]].endf[x[1]]
-            if -1 == x[1] || mark[x[1]] { break }
+            if x[1] == -1 || mark[x[1]] { break }
             if checkAccept(x[0], x[1]) {
               // Unlike before, we can break off the search. Now that we're at the end, there's no need to maintain the state of each DFA.
               break dollar
@@ -896,14 +889,14 @@ dollar:  // Handle $.
           select {
             case ch <- frame{matchi, text, line, column}: {
             }
-            case stopped = <- ch_stop: {
+            case stopped = <- chStop: {
             }
           }
           if stopped {
             break
           }
           if len(family[matchi].nest) > 0 {
-            scan(bufio.NewReader(strings.NewReader(text)), ch, ch_stop, family[matchi].nest, line, column)
+            scan(bufio.NewReader(strings.NewReader(text)), ch, chStop, family[matchi].nest, line, column)
           }
           if atEOF {
             break
@@ -920,7 +913,7 @@ dollar:  // Handle $.
     }
     ch <- frame{-1, "", line, column}
   }
-  go scan(bufio.NewReader(in), yylex.ch, yylex.ch_stop, dfas, 0, 0)
+  go scan(bufio.NewReader(in), yylex.ch, yylex.chStop, dfas, 0, 0)
   return yylex
 }
 
@@ -935,12 +928,14 @@ var dfas = []dfa{`
 
 var lexeroutro = `}
 
+// NewLexer creates a new default Lexer.
 func NewLexer(in io.Reader) *Lexer {
   return NewLexerWithInit(in, nil)
 }
 
-func (yyLex *Lexer) Stop() {
-  yyLex.ch_stop <- true
+// Stop stops the lexer.
+func (yylex *Lexer) Stop() {
+  yylex.chStop <- true
 }
 
 // Text returns the matched text.

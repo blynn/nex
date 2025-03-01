@@ -34,6 +34,8 @@ func init() {
 }
 
 func dieErr(t *testing.T, err error, s string) {
+	t.Helper()
+
 	if err != nil {
 		t.Fatalf("%s: %s", s, err)
 	}
@@ -47,6 +49,8 @@ func TestNexPlusYacc(t *testing.T) {
 		dieErr(t, os.RemoveAll(tmpdir), "RemoveAll")
 	}()
 	run := func(s string) {
+		t.Helper()
+
 		v := strings.Split(s, " ")
 		err := exec.Command(v[0], v[1:]...).Run()
 		dieErr(t, err, s)
@@ -275,6 +279,7 @@ rect 11 12 16 17
 func TestGiantProgram(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "nex")
 	dieErr(t, err, "TempDir")
+	dieErr(t, os.WriteFile(filepath.Join(tmpdir, "go.mod"), []byte("module nextest\n\ngo 1.23.4\n"), 0666), "WriteFile")
 	wd, err := os.Getwd()
 	dieErr(t, err, "Getwd")
 	dieErr(t, os.Chdir(tmpdir), "Chdir")
@@ -396,7 +401,7 @@ func TestGiantProgram(t *testing.T) {
 `, "abcdefghijmnopabcoq", "0ij1q"},
 	} {
 		id := fmt.Sprintf("%v", i)
-		s += `import "./nex_test` + id + "\"\n"
+		s += `import "nextest/nex_test` + id + "\"\n"
 		dieErr(t, os.Mkdir("nex_test"+id, 0777), "Mkdir")
 		// Ugly hack to import packages.
 		prog := x.prog

@@ -18,7 +18,7 @@ func TestGenStable(t *testing.T) {
 		var out bytes.Buffer
 
 		process(&out, bytes.NewBufferString(testinput))
-		e := "13f760d2f0dc1743dd7165781f2a318d"
+		e := "f2fef8e2a1c5eeb7c38f6e437be9ccac"
 		if x := fmt.Sprintf("%x", md5.Sum(out.Bytes())); x != e {
 			t.Errorf("got: %s wanted: %s", x, e)
 		}
