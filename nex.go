@@ -466,7 +466,6 @@ func gen(out *bufio.Writer, x *rule) {
 				return
 			}
 		}
-		panic("unreachable")
 	}
 	pre = func() (start, end *node) {
 		start, end = pcat()
@@ -856,6 +855,9 @@ func NewLexerWithInit(in io.Reader, initFun func(*Lexer)) *Lexer {
           checkAccept(x[0], x[1])
         }
         state = nextState
+        if matchn > 0 && buf[matchn-1] == '\n' {
+          state = nil
+        }
       } else {
 dollar:  // Handle $.
         for _, x := range state {

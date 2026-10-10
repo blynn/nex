@@ -59,8 +59,17 @@ func TestNexPlusYacc(t *testing.T) {
 	defer func() {
 		dieErr(t, os.Chdir(wd), "Chdir")
 	}()
+	yaccCmd := "go tool yacc"
+	if _, err := exec.LookPath("goyacc"); err == nil {
+		yaccCmd = "goyacc"
+	} else {
+		cmd := exec.Command("go", "tool", "yacc")
+		if err := cmd.Run(); err != nil {
+			t.Skip("skipping test: yacc tool not found")
+		}
+	}
 	run(nexBin + " rp.nex")
-	run("go tool yacc rp.y")
+	run(yaccCmd + " rp.y")
 	run("go build y.go rp.nn.go")
 	cmd := exec.Command("./y")
 	cmd.Stdin = strings.NewReader(
@@ -429,8 +438,9 @@ func Go() {
 	}
 	s += "func main() {\n" + body + "}\n"
 	err = ioutil.WriteFile("tmp.go", []byte(s), 0777)
-	dieErr(t, err, "WriteFile")
-	output, err := exec.Command("go", "run", "tmp.go").CombinedOutput()
+	cmd := exec.Command("go", "run", "tmp.go")
+	cmd.Env = append(os.Environ(), "GO111MODULE=off")
+	output, err := cmd.CombinedOutput()
 	dieErr(t, err, string(output))
 }
 
